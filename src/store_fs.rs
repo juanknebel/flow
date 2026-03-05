@@ -57,6 +57,23 @@ fn load_cards(root: &Path, col_id: &str) -> io::Result<Vec<Card>> {
     Ok(cards)
 }
 
+pub fn read_card_content(path: &Path) -> io::Result<(String, String)> {
+    let raw = fs::read_to_string(path)?;
+    Ok(parse_md(&raw, ""))
+}
+
+pub fn write_card_content(path: &Path, title: &str, body: &str) -> io::Result<()> {
+    let mut content = format!("# {title}\n");
+    if !body.is_empty() {
+        content.push('\n');
+        content.push_str(body);
+        if !body.ends_with('\n') {
+            content.push('\n');
+        }
+    }
+    fs::write(path, content)
+}
+
 fn parse_md(raw: &str, fallback: &str) -> (String, String) {
     let mut lines = raw.lines();
     let first = lines.next().unwrap_or("");
@@ -237,6 +254,52 @@ mod tests {
 
         let order = fs::read_to_string(root.join("cols/todo/order.txt")).unwrap();
         assert!(order.lines().any(|l| l == id));
+
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn write_and_read_card_content_roundtrips() {
+        let root = tmp_root();
+        fs::create_dir_all(&root).unwrap();
+        let path = root.join("CARD.md");
+
+        write_card_content(&path, "My Title", "Body text").unwrap();
+
+        let (title, body) = read_card_content(&path).unwrap();
+        assert_eq!(title, "My Title");
+        assert_eq!(body, "Body text");
+
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn write_card_content_empty_body() {
+        let root = tmp_root();
+        fs::create_dir_all(&root).unwrap();
+        let path = root.join("CARD.md");
+
+        write_card_content(&path, "Title Only", "").unwrap();
+
+        let (title, body) = read_card_content(&path).unwrap();
+        assert_eq!(title, "Title Only");
+        assert!(body.is_empty());
+
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn write_card_content_preserves_multiline_body() {
+        let root = tmp_root();
+        fs::create_dir_all(&root).unwrap();
+        let path = root.join("CARD.md");
+
+        write_card_content(&path, "Title", "Line 1\nLine 2\nLine 3").unwrap();
+
+        let (title, body) = read_card_content(&path).unwrap();
+        assert_eq!(title, "Title");
+        assert!(body.contains("Line 1"));
+        assert!(body.contains("Line 3"));
 
         fs::remove_dir_all(root).unwrap();
     }

@@ -23,6 +23,8 @@ use ratatui::{
 };
 
 mod app;
+mod cli;
+mod format;
 mod model;
 mod provider;
 mod provider_jira;
@@ -30,6 +32,7 @@ mod provider_local;
 mod store_fs;
 
 use app::{Action, App};
+use clap::Parser;
 
 fn help_text() -> &'static str {
     "h/l or ←/→ focus  j/k or ↑/↓ select  H/L move  n new  e edit  Enter detail  r refresh  Esc close/quit  q quit"
@@ -57,13 +60,19 @@ fn action_from_key(code: KeyCode) -> Option<Action> {
 }
 
 fn main() -> io::Result<()> {
+    let args = cli::Cli::parse();
+
+    if let Some(cmd) = args.command {
+        return cli::run(cmd, args.format);
+    }
+
     enable_raw_mode()?;
     let mut stdout = io::stdout();
     execute!(stdout, EnterAlternateScreen)?;
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
-    let res = run(&mut terminal);
+    let res = run_tui(&mut terminal);
 
     disable_raw_mode()?;
     execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
@@ -71,7 +80,7 @@ fn main() -> io::Result<()> {
     res
 }
 
-fn run(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> io::Result<()> {
+fn run_tui(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> io::Result<()> {
     let mut provider = provider::from_env();
 
     let board = match provider.load_board() {
