@@ -117,6 +117,18 @@ pub fn create_card(root: &Path, to_col_id: &str) -> io::Result<String> {
     Ok(id)
 }
 
+pub fn delete_card(root: &Path, card_id: &str) -> io::Result<()> {
+    let col_ids = list_columns(root)?;
+    let col_id = find_card_column(root, &col_ids, card_id)?
+        .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "card not found"))?;
+
+    let dir = root.join("cols").join(&col_id);
+    fs::remove_file(dir.join(format!("{card_id}.md")))?;
+    order_remove(&dir.join("order.txt"), card_id)?;
+
+    Ok(())
+}
+
 pub fn card_path(root: &Path, card_id: &str) -> io::Result<PathBuf> {
     let col_ids = list_columns(root)?;
     let src = find_card_column(root, &col_ids, card_id)?
@@ -254,6 +266,27 @@ mod tests {
 
         let order = fs::read_to_string(root.join("cols/todo/order.txt")).unwrap();
         assert!(order.lines().any(|l| l == id));
+
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn delete_card_removes_file_and_order() {
+        let root = tmp_root();
+        write(&root.join("board.txt"), "col todo\n");
+        let id = create_card(&root, "todo").unwrap();
+
+        delete_card(&root, &id).unwrap();
+
+        assert!(
+            !root.join("cols")
+                .join("todo")
+                .join(format!("{id}.md"))
+                .exists()
+        );
+
+        let order = fs::read_to_string(root.join("cols/todo/order.txt")).unwrap();
+        assert!(!order.lines().any(|l| l == id));
 
         fs::remove_dir_all(root).unwrap();
     }

@@ -12,6 +12,7 @@ pub enum Action {
     MoveRight,
     ToggleDetail,
     Refresh,
+    Delete,
 }
 
 pub struct App {
@@ -19,6 +20,7 @@ pub struct App {
     pub col: usize,
     pub row: usize,
     pub detail_open: bool,
+    pub confirm_delete: bool,
     pub banner: Option<String>,
 }
 
@@ -29,6 +31,7 @@ impl App {
             col: 0,
             row: 0,
             detail_open: false,
+            confirm_delete: false,
             banner: None,
         }
     }
@@ -124,7 +127,9 @@ impl App {
         match a {
             Action::Quit => return true,
             Action::CloseOrQuit => {
-                if self.detail_open {
+                if self.confirm_delete {
+                    self.confirm_delete = false;
+                } else if self.detail_open {
                     self.detail_open = false;
                 } else {
                     return true;
@@ -135,6 +140,11 @@ impl App {
             Action::SelectUp => self.select(-1),
             Action::SelectDown => self.select(1),
             Action::ToggleDetail => self.detail_open = !self.detail_open,
+            Action::Delete => {
+                if !self.board.columns.is_empty() && !self.board.columns[self.col].cards.is_empty() {
+                    self.confirm_delete = true;
+                }
+            }
             Action::Refresh | Action::MoveLeft | Action::MoveRight => {}
         }
         false

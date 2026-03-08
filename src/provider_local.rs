@@ -72,6 +72,19 @@ impl Provider for LocalProvider {
             },
         })
     }
+
+    fn delete_card(&mut self, card_id: &str) -> Result<(), ProviderError> {
+        store_fs::delete_card(&self.root, card_id).map_err(|err| match err.kind() {
+            io::ErrorKind::NotFound => ProviderError::NotFound {
+                id: card_id.to_string(),
+            },
+            _ => ProviderError::Io {
+                op: "delete_card".to_string(),
+                path: self.root.clone(),
+                source: err,
+            },
+        })
+    }
 }
 
 fn map_load_err(op: &str, root: &Path, err: io::Error) -> ProviderError {

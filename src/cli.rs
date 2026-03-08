@@ -101,6 +101,12 @@ pub enum Command {
         body: Option<String>,
     },
 
+    /// Delete a card permanently
+    Delete {
+        /// Card identifier to delete
+        card_id: String,
+    },
+
     /// List column ids, titles, and card counts
     Columns,
 }
@@ -197,6 +203,17 @@ pub fn run(cmd: Command, fmt: Format) -> io::Result<()> {
                 "{}",
                 format::format_result(
                     &[("action", "edit"), ("card_id", &card_id)],
+                    fmt,
+                )
+            );
+        }
+        Command::Delete { card_id } => {
+            prov.delete_card(&card_id)
+                .map_err(|e| io::Error::other(e.to_string()))?;
+            println!(
+                "{}",
+                format::format_result(
+                    &[("action", "delete"), ("card_id", &card_id)],
                     fmt,
                 )
             );

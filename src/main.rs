@@ -35,7 +35,7 @@ use app::{Action, App};
 use clap::Parser;
 
 fn help_text() -> &'static str {
-    "h/l or ←/→ focus  j/k or ↑/↓ select  H/L move  n new  e edit  Enter detail  r refresh  Esc close/quit  q quit"
+    "h/l or ←/→ focus  j/k or ↑/↓ select  H/L move  n new  e edit  d delete  Enter detail  r refresh  Esc close/quit  q quit"
 }
 
 fn action_from_key(code: KeyCode) -> Option<Action> {
@@ -54,6 +54,7 @@ fn action_from_key(code: KeyCode) -> Option<Action> {
 
         KeyCode::Enter => Action::ToggleDetail,
         KeyCode::Char('r') => Action::Refresh,
+        KeyCode::Char('d') => Action::Delete,
 
         _ => return None,
     })
@@ -159,6 +160,35 @@ fn run_tui(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> io::Result<
         if event::poll(Duration::from_millis(50))? {
             if let Event::Key(k) = event::read()? {
                 if k.kind == KeyEventKind::Press {
+                    if app.confirm_delete {
+                        match k.code {
+                            KeyCode::Char('y') | KeyCode::Char('Y') => {
+                                if let Some(card_id) = selected_card_id(&app) {
+                                    if let Err(e) = provider.delete_card(&card_id) {
+                                        app.banner = Some(format!("Delete failed: {e}"));
+                                    } else {
+                                        match provider.load_board() {
+                                            Ok(b) => {
+                                                app.board = b;
+                                                app.clamp();
+                                                app.banner = Some(format!("Card {card_id} deleted"));
+                                            }
+                                            Err(e) => {
+                                                app.banner = Some(format!("Reload failed: {e}"))
+                                            }
+                                        }
+                                    }
+                                }
+                                app.confirm_delete = false;
+                            }
+                            KeyCode::Char('n') | KeyCode::Char('N') | KeyCode::Esc => {
+                                app.confirm_delete = false;
+                            }
+                            _ => {}
+                        }
+                        continue;
+                    }
+
                     if matches!(k.code, KeyCode::Char('n')) {
                         if quitting {
                             continue;
@@ -487,6 +517,40 @@ fn render(f: &mut Frame, app: &App) {
                     .borders(Borders::ALL)
                     .border_style(Style::default().fg(Color::DarkGray)),
             ),
+            area,
+        );
+    }
+
+    if app.confirm_delete {
+        let area = centered(40, 20, f.area());
+        f.render_widget(Clear, area);
+
+        let card_id = selected_card_id(app).unwrap_or_else(|| "Unknown".to_string());
+        let text = vec![
+            Line::from(""),
+            Line::from(vec![
+                Span::raw("Delete card "),
+                Span::styled(&card_id, Style::default().add_modifier(Modifier::BOLD)),
+                Span::raw("?"),
+            ]),
+            Line::from(""),
+            Line::from(vec![
+                Span::styled("y", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
+                Span::raw("es / "),
+                Span::styled("n", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
+                Span::raw("o"),
+            ]),
+        ];
+
+        f.render_widget(
+            Paragraph::new(text)
+                .alignment(ratatui::layout::Alignment::Center)
+                .block(
+                    Block::default()
+                        .title("Confirm Delete")
+                        .borders(Borders::ALL)
+                        .border_style(Style::default().fg(Color::Red)),
+                ),
             area,
         );
     }

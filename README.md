@@ -101,10 +101,36 @@ This format is:
 - `H` / `L` — move card left / right
 - `n` — create a new card in focused column (local mode)
 - `e` — edit selected card in `$EDITOR` (local mode)
+- `d` — delete selected card with confirmation (local mode)
 - `Enter` — toggle description
 - `r` — reload board from disk
-- `Esc` — close description / quit
+- `Esc` — close description / cancel / quit
 - `q` — quit
+
+## CLI Usage
+`flow` can also be used as a CLI tool for scripts or quick actions:
+
+```bash
+# List all columns and cards
+flow list
+
+# Show a specific card
+flow show FLOW-1
+
+# Create a new card
+flow create todo "My new task" --body "Some details"
+
+# Move a card to another column
+flow move FLOW-1 in_progress
+
+# Delete a card permanently
+flow delete FLOW-1
+
+# List column IDs
+flow columns
+```
+
+Output format can be changed with `-f`: `plain`, `json`, `xml`, `csv`, `table`, `markdown`.
 
 ## Run
 

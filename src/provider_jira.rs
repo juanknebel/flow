@@ -299,6 +299,12 @@ impl Provider for JiraProvider {
 
         Ok(())
     }
+
+    fn delete_card(&mut self, _card_id: &str) -> Result<(), ProviderError> {
+        Err(ProviderError::Parse {
+            msg: "delete_card not supported by Jira provider".to_string(),
+        })
+    }
 }
 
 #[derive(Deserialize)]
