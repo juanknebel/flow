@@ -18,6 +18,17 @@ pub struct JiraProvider {
 }
 
 impl JiraProvider {
+    pub fn new(base_url: String, email: String, api_token: String, board_id: String) -> Self {
+        Self {
+            client: Client::new(),
+            base_url: base_url.trim_end_matches('/').to_string(),
+            email,
+            api_token,
+            board_id: Some(board_id),
+            err: None,
+        }
+    }
+
     pub fn from_env() -> Self {
         let base_url = std::env::var("JIRA_BASE_URL").ok();
         let email = std::env::var("JIRA_EMAIL").ok();

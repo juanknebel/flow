@@ -2,6 +2,8 @@
 
 A keyboard-first Kanban board in your terminal.
 
+`flow` is both a standalone CLI/TUI tool and a reusable Rust library for building Kanban-style interfaces in your own terminal applications.
+
 Move work between states with a single keystroke and peek at issue descriptions without opening a browser.
 
 ![Demo](./demo.gif)
@@ -10,17 +12,40 @@ Move work between states with a single keystroke and peek at issue descriptions 
 Opening a browser just to move an issue is slow and breaks focus.  
 `flow` keeps the common actions fast, local, and keyboard-driven.
 
-This project is intentionally minimal and opinionated.
-
 ## Features
-- Keyboard-first Kanban board
-- Columns and cards loaded from disk (no hardcoded data)
-- One-keystroke transitions (`H` / `L`)
-- Create/edit cards from UI in local mode (`n` / `e`)
-- Toggle issue description (`Enter`)
-- `hjkl` **and** arrow-key navigation
-- Clean, terminal-native visuals
-- Immediate persistence on move (local mode)
+- **Standalone CLI & TUI**: Powerful interactive board and scriptable CLI.
+- **Reusable Library**: Exported components, models, and UI logic for integration into other Rust TUI apps.
+- **Multiple Providers**: Local filesystem (Markdown-based) and Jira Cloud support.
+- **Keyboard-first**: One-keystroke transitions (`H` / `L`), `hjkl` and arrow-key navigation.
+- **Integrated Editing**: Create/edit cards directly in your `$EDITOR`.
+- **Clean Visuals**: Terminal-native design powered by `ratatui`.
+
+## As a Library
+You can use `flow` as a crate in your own Rust projects to add Kanban boards to your terminal UIs.
+
+Add to your `Cargo.toml`:
+```toml
+[dependencies]
+flow = { git = "https://github.com/example/flow" }
+```
+
+Basic usage with `ratatui`:
+```rust
+use flow::{App, Board, ui, provider_local::LocalProvider, Provider};
+
+// 1. Initialize a provider (Local or Jira)
+let mut provider = LocalProvider::new(std::path::PathBuf::from("./my-board"));
+
+// 2. Load the board and create the App state
+let board = provider.load_board().expect("failed to load board");
+let mut app = App::new(board);
+
+// 3. Render in your terminal loop
+// (app handles focus, selection, and optimistic moves)
+terminal.draw(|f| {
+    ui::render(f, &app);
+})?;
+```
 
 ## Demo / Local mode
 `flow` runs in **demo mode by default**.
@@ -29,71 +54,29 @@ Demo data is loaded from files on disk and can be edited directly.
 This makes the demo representative of real usage, not a hardcoded example.
 
 Default demo board location:
-
 ```
 boards/demo/
 ```
 
 To use a persistent local board, point `FLOW_BOARD_PATH` at the board directory:
-
 ```bash
 FLOW_BOARD_PATH=/path/to/board cargo run
 ```
 
 Local boards default to:
-
 ```
 ~/.config/flow/boards/default
 ```
 
-If you want to use the default local board path, set:
-
-```bash
-FLOW_PROVIDER=local cargo run
-```
-
 ## Jira mode
 To load issues from Jira, set:
-
 ```bash
 FLOW_PROVIDER=jira
 JIRA_BASE_URL=https://your-site.atlassian.net
 JIRA_EMAIL=you@example.com
 JIRA_API_TOKEN=your_token
-```
-
-Set board ID to load column order from Jira and infer the board's filter:
-
-```bash
 JIRA_BOARD_ID=123
 ```
-
-Flow will only show issues assigned to the current user in open sprints.
-
-
-## Board format
-Boards are plain files:
-
-- `board.txt` — column definitions and order
-- `cols/<column>/order.txt` — card ordering per column
-- `cols/<column>/<ID>.md` — card content (Markdown)
-
-Example:
-
-```
-boards/demo/
-  board.txt
-  cols/
-    todo/
-      order.txt
-      FLOW-1.md
-      FLOW-2.md
-```
-
-This format is:
-- human-editable
-- diff-friendly
-- resilient to partial edits
 
 ## Keybindings
 - `h` / `l` **or** `←` / `→` — focus column
@@ -132,17 +115,14 @@ flow columns
 
 Output format can be changed with `-f`: `plain`, `json`, `xml`, `csv`, `table`, `markdown`.
 
-## Run
+## Installation
 
+### From source
 ```bash
-cargo run
+git clone https://github.com/example/flow
+cd flow
+cargo install --path .
 ```
-
-## Status
-Early, but usable.
-
-The focus is on a solid interaction model, simple persistence, and a testable core.
-Expect breaking changes as features are added.
 
 ## License
 MIT

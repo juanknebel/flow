@@ -2,6 +2,19 @@
 name = "flow"
 version = "0.1.0"
 edition = "2024"
+description = "A terminal Kanban board with CLI and TUI modes."
+license = "MIT"
+repository = "https://github.com/example/flow"
+keywords = ["kanban", "tui", "cli", "project-management", "ratatui"]
+categories = ["command-line-utilities", "visualization"]
+
+[lib]
+name = "flow"
+path = "src/lib.rs"
+
+[[bin]]
+name = "flow"
+path = "src/main.rs"
 
 [dependencies]
 clap = { version = "4", features = ["derive"] }

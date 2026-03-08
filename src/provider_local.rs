@@ -14,6 +14,10 @@ pub struct LocalProvider {
 }
 
 impl LocalProvider {
+    pub fn new(root: PathBuf) -> Self {
+        Self { root }
+    }
+
     pub fn from_env() -> Self {
         let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
 
