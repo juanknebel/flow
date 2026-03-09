@@ -13,6 +13,16 @@ pub enum Action {
     ToggleDetail,
     Refresh,
     Delete,
+    Add,
+    Edit,
+}
+
+pub struct EditState {
+    pub card_id: String,
+    pub title: String,
+    pub description: String,
+    pub cursor_pos: usize,
+    pub focus_description: bool,
 }
 
 pub struct App {
@@ -21,6 +31,7 @@ pub struct App {
     pub row: usize,
     pub detail_open: bool,
     pub confirm_delete: bool,
+    pub edit_state: Option<EditState>,
     pub banner: Option<String>,
 }
 
@@ -32,6 +43,7 @@ impl App {
             row: 0,
             detail_open: false,
             confirm_delete: false,
+            edit_state: None,
             banner: None,
         }
     }
@@ -127,7 +139,9 @@ impl App {
         match a {
             Action::Quit => return true,
             Action::CloseOrQuit => {
-                if self.confirm_delete {
+                if self.edit_state.is_some() {
+                    self.edit_state = None;
+                } else if self.confirm_delete {
                     self.confirm_delete = false;
                 } else if self.detail_open {
                     self.detail_open = false;
@@ -145,7 +159,7 @@ impl App {
                     self.confirm_delete = true;
                 }
             }
-            Action::Refresh | Action::MoveLeft | Action::MoveRight => {}
+            Action::Refresh | Action::MoveLeft | Action::MoveRight | Action::Add | Action::Edit => {}
         }
         false
     }

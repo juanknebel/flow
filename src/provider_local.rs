@@ -89,6 +89,15 @@ impl Provider for LocalProvider {
             },
         })
     }
+
+    fn update_card(&mut self, card_id: &str, title: &str, description: &str) -> Result<(), ProviderError> {
+        let path = self.card_path(card_id)?;
+        store_fs::write_card_content(&path, title, description).map_err(|err| ProviderError::Io {
+            op: "update_card".to_string(),
+            path,
+            source: err,
+        })
+    }
 }
 
 fn map_load_err(op: &str, root: &Path, err: io::Error) -> ProviderError {

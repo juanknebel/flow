@@ -17,7 +17,7 @@ Opening a browser just to move an issue is slow and breaks focus.
 - **Reusable Library**: Exported components, models, and UI logic for integration into other Rust TUI apps.
 - **Multiple Providers**: Local filesystem (Markdown-based) and Jira Cloud support.
 - **Keyboard-first**: One-keystroke transitions (`H` / `L`), `hjkl` and arrow-key navigation.
-- **Integrated Editing**: Create/edit cards directly in your `$EDITOR`.
+- **Integrated Editing**: Create/edit cards directly in an integrated popup.
 - **Clean Visuals**: Terminal-native design powered by `ratatui`.
 
 ## As a Library
@@ -82,12 +82,12 @@ JIRA_BOARD_ID=123
 - `h` / `l` **or** `←` / `→` — focus column
 - `j` / `k` **or** `↑` / `↓` — select card
 - `H` / `L` — move card left / right
-- `n` — create a new card in focused column (local mode)
-- `e` — edit selected card in `$EDITOR` (local mode)
-- `d` — delete selected card with confirmation (local mode)
+- `a` / `n` — create a new card (integrated popup)
+- `e` — edit selected card (integrated popup)
+- `d` — delete selected card with confirmation
 - `Enter` — toggle description
 - `r` — reload board from disk
-- `Esc` — close description / cancel / quit
+- `Esc` — close popup / cancel / quit
 - `q` — quit
 
 ## CLI Usage

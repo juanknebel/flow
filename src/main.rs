@@ -1,8 +1,6 @@
 use std::{
     collections::VecDeque,
     io, panic,
-    path::Path,
-    process::Command,
     sync::mpsc::{self, Receiver, TryRecvError},
     thread,
     time::Duration,
@@ -125,6 +123,58 @@ fn run_tui(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> io::Result<
         if event::poll(Duration::from_millis(50))? {
             if let Event::Key(k) = event::read()? {
                 if k.kind == KeyEventKind::Press {
+                    if let Some(edit) = app.edit_state.as_mut() {
+                        match k.code {
+                            crossterm::event::KeyCode::Esc => {
+                                app.edit_state = None;
+                            }
+                            crossterm::event::KeyCode::Tab => {
+                                edit.focus_description = !edit.focus_description;
+                                edit.cursor_pos = if edit.focus_description {
+                                    edit.description.len()
+                                } else {
+                                    edit.title.len()
+                                };
+                            }
+                            crossterm::event::KeyCode::Enter => {
+                                let card_id = edit.card_id.clone();
+                                let title = edit.title.clone();
+                                let description = edit.description.clone();
+                                if let Err(e) = provider.update_card(&card_id, &title, &description) {
+                                    app.banner = Some(format!("Save failed: {e}"));
+                                } else {
+                                    match provider.load_board() {
+                                        Ok(b) => {
+                                            app.board = b;
+                                            focus_card_by_id(&mut app, &card_id);
+                                            app.banner = Some("Card saved".to_string());
+                                        }
+                                        Err(e) => app.banner = Some(format!("Reload failed: {e}")),
+                                    }
+                                }
+                                app.edit_state = None;
+                            }
+                            crossterm::event::KeyCode::Char(c) => {
+                                if edit.focus_description {
+                                    edit.description.push(c);
+                                } else {
+                                    edit.title.push(c);
+                                    edit.cursor_pos = edit.title.len();
+                                }
+                            }
+                            crossterm::event::KeyCode::Backspace => {
+                                if edit.focus_description {
+                                    edit.description.pop();
+                                } else {
+                                    edit.title.pop();
+                                    edit.cursor_pos = edit.title.len();
+                                }
+                            }
+                            _ => {}
+                        }
+                        continue;
+                    }
+
                     if app.confirm_delete {
                         match k.code {
                             crossterm::event::KeyCode::Char('y') | crossterm::event::KeyCode::Char('Y') => {
@@ -154,52 +204,6 @@ fn run_tui(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> io::Result<
                         continue;
                     }
 
-                    if matches!(k.code, crossterm::event::KeyCode::Char('n')) {
-                        if quitting {
-                            continue;
-                        }
-                        let Some(col) = app.board.columns.get(app.col) else {
-                            app.banner = Some("Create failed: no column selected".to_string());
-                            continue;
-                        };
-                        let card_id = match provider.create_card(&col.id) {
-                            Ok(id) => id,
-                            Err(e) => {
-                                app.banner = Some(format!("Create failed: {e}"));
-                                continue;
-                            }
-                        };
-                        if let Err(msg) = edit_card_in_editor(
-                            terminal,
-                            provider.as_mut(),
-                            &mut app,
-                            card_id,
-                            "Create failed",
-                        ) {
-                            app.banner = Some(msg);
-                        }
-                        continue;
-                    }
-                    if matches!(k.code, crossterm::event::KeyCode::Char('e')) {
-                        if quitting {
-                            continue;
-                        }
-                        let Some(card_id) = selected_card_id(&app) else {
-                            app.banner = Some("Edit failed: no card selected".to_string());
-                            continue;
-                        };
-                        if let Err(msg) = edit_card_in_editor(
-                            terminal,
-                            provider.as_mut(),
-                            &mut app,
-                            card_id,
-                            "Edit failed",
-                        ) {
-                            app.banner = Some(msg);
-                        }
-                        continue;
-                    }
-
                     if let Some(a) = action_from_key(k.code) {
                         if quitting {
                             if matches!(a, Action::MoveLeft | Action::MoveRight) {
@@ -208,6 +212,51 @@ fn run_tui(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> io::Result<
                         }
 
                         match a {
+                            Action::Add => {
+                                if quitting {
+                                    continue;
+                                }
+                                let Some(col) = app.board.columns.get(app.col) else {
+                                    app.banner = Some("Create failed: no column selected".to_string());
+                                    continue;
+                                };
+                                match provider.create_card(&col.id) {
+                                    Ok(id) => {
+                                        app.edit_state = Some(flow::app::EditState {
+                                            card_id: id,
+                                            title: "New card".to_string(),
+                                            description: "".to_string(),
+                                            cursor_pos: 8,
+                                            focus_description: false,
+                                        });
+                                    }
+                                    Err(e) => {
+                                        app.banner = Some(format!("Create failed: {e}"));
+                                    }
+                                }
+                            }
+                            Action::Delete => {
+                                if !app.board.columns.is_empty() && !app.board.columns[app.col].cards.is_empty() {
+                                    app.confirm_delete = true;
+                                }
+                            }
+                            Action::Edit => {
+                                if quitting {
+                                    continue;
+                                }
+                                let Some(col) = app.board.columns.get(app.col) else { continue; };
+                                let Some(card) = col.cards.get(app.row) else {
+                                    app.banner = Some("Edit failed: no card selected".to_string());
+                                    continue;
+                                };
+                                app.edit_state = Some(flow::app::EditState {
+                                    card_id: card.id.clone(),
+                                    title: card.title.clone(),
+                                    description: card.description.clone(),
+                                    cursor_pos: card.title.len(),
+                                    focus_description: false,
+                                });
+                            }
                             Action::MoveLeft => {
                                 if move_rx.is_some() {
                                     if move_queue.len() >= MAX_QUEUE_SIZE {
@@ -290,27 +339,6 @@ fn selected_card_id(app: &App) -> Option<String> {
         .map(|card| card.id.clone())
 }
 
-fn edit_card_in_editor(
-    terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
-    provider: &mut dyn provider::Provider,
-    app: &mut App,
-    card_id: String,
-    err_prefix: &str,
-) -> Result<(), String> {
-    let path = provider
-        .card_path(&card_id)
-        .map_err(|e| format!("{err_prefix}: {e}"))?;
-    open_in_editor(terminal, &path).map_err(|e| format!("Open editor failed: {e}"))?;
-
-    let board = provider
-        .load_board()
-        .map_err(|e| format!("Reload failed: {e}"))?;
-    app.board = board;
-    focus_card_by_id(app, &card_id);
-    app.banner = None;
-    Ok(())
-}
-
 fn focus_card_by_id(app: &mut App, card_id: &str) {
     for (col_idx, col) in app.board.columns.iter().enumerate() {
         if let Some(row_idx) = col.cards.iter().position(|c| c.id == card_id) {
@@ -321,29 +349,6 @@ fn focus_card_by_id(app: &mut App, card_id: &str) {
         }
     }
     app.focus_first_non_empty();
-}
-
-fn open_in_editor(
-    terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
-    path: &Path,
-) -> io::Result<()> {
-    disable_raw_mode()?;
-    execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
-
-    let editor = std::env::var("EDITOR").unwrap_or_else(|_| "vi".to_string());
-    let status = Command::new(editor).arg(path).status();
-
-    execute!(terminal.backend_mut(), EnterAlternateScreen)?;
-    enable_raw_mode()?;
-    terminal.clear()?;
-    terminal.show_cursor()?;
-
-    let status = status?;
-    if status.success() {
-        Ok(())
-    } else {
-        Err(io::Error::other("editor exited with non-zero status"))
-    }
 }
 
 fn update_quit_banner(
