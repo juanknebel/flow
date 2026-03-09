@@ -35,7 +35,7 @@ pub fn action_from_key(code: KeyCode) -> Option<Action> {
     })
 }
 
-pub fn render(f: &mut Frame, app: &App) {
+pub fn render(f: &mut Frame, app: &App, render_area: Option<Rect>) {
     let chunks = if app.banner.is_some() {
         Layout::default()
             .direction(Direction::Vertical)
@@ -44,12 +44,12 @@ pub fn render(f: &mut Frame, app: &App) {
                 Constraint::Min(1),
                 Constraint::Length(2),
             ])
-            .split(f.area())
+            .split(render_area.unwrap_or_else(|| f.area()))
     } else {
         Layout::default()
             .direction(Direction::Vertical)
             .constraints([Constraint::Min(1), Constraint::Length(2)])
-            .split(f.area())
+            .split(render_area.unwrap_or_else(|| f.area()))
     };
 
     let (banner_area, main, help) = if app.banner.is_some() {
@@ -98,7 +98,7 @@ pub fn render(f: &mut Frame, app: &App) {
             return;
         };
 
-        let area = centered(70, 45, f.area());
+        let area = centered(70, 45, render_area.unwrap_or_else(|| f.area()));
         f.render_widget(Clear, area);
 
         let mut lines = Vec::new();
@@ -133,7 +133,7 @@ pub fn render(f: &mut Frame, app: &App) {
     }
 
     if app.confirm_delete {
-        let area = centered(40, 20, f.area());
+        let area = centered(40, 20, render_area.unwrap_or_else(|| f.area()));
         f.render_widget(Clear, area);
 
         let card_id = selected_card_id(app).unwrap_or_else(|| "Unknown".to_string());

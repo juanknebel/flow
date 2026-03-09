@@ -55,7 +55,7 @@ fn run_tui(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> io::Result<
             let mut app = App::new(Board { columns: vec![] });
             app.banner = Some(format!("Load failed: {e}"));
             loop {
-                terminal.draw(|f| render(f, &app))?;
+                terminal.draw(|f| render(f, &app, None))?;
                 if event::poll(Duration::from_millis(50))? {
                     if let Event::Key(k) = event::read()? {
                         if k.kind == KeyEventKind::Press
@@ -120,7 +120,7 @@ fn run_tui(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> io::Result<
             return Ok(());
         }
 
-        terminal.draw(|f| render(f, &app))?;
+        terminal.draw(|f| render(f, &app, None))?;
 
         if event::poll(Duration::from_millis(50))? {
             if let Event::Key(k) = event::read()? {
