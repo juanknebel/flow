@@ -10,7 +10,7 @@ use crossterm::event::KeyCode;
 use crate::app::{Action, App};
 
 pub fn help_text() -> &'static str {
-    "h/l or ←/→ focus  j/k or ↑/↓ select  H/L move  n new  e edit  d delete  Enter detail  r refresh  Esc close/quit  q quit"
+    "h/l or ←/→ focus  j/k or ↑/↓ select  H/L move  a/n new  e edit  d delete  Enter detail  r refresh  Esc close/quit  q quit"
 }
 
 pub fn action_from_key(code: KeyCode) -> Option<Action> {
@@ -30,6 +30,8 @@ pub fn action_from_key(code: KeyCode) -> Option<Action> {
         KeyCode::Enter => Action::ToggleDetail,
         KeyCode::Char('r') => Action::Refresh,
         KeyCode::Char('d') => Action::Delete,
+        KeyCode::Char('a') | KeyCode::Char('n') => Action::Add,
+        KeyCode::Char('e') => Action::Edit,
 
         _ => return None,
     })
@@ -162,6 +164,84 @@ pub fn render(f: &mut Frame, app: &App, render_area: Option<Rect>) {
                         .borders(Borders::ALL)
                         .border_style(Style::default().fg(Color::Red)),
                 ),
+            area,
+        );
+    }
+
+    if let Some(edit) = &app.edit_state {
+        let area = centered(70, 60, f.area());
+        f.render_widget(Clear, area);
+
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .margin(1)
+            .constraints([
+                Constraint::Length(1),
+                Constraint::Length(3),
+                Constraint::Min(1),
+                Constraint::Length(1),
+            ])
+            .split(area);
+
+        f.render_widget(
+            Paragraph::new(Line::from(vec![
+                Span::raw("Editing "),
+                Span::styled(&edit.card_id, Style::default().add_modifier(Modifier::BOLD)),
+            ])),
+            chunks[0],
+        );
+
+        let title_style = if !edit.focus_description {
+            Style::default().fg(Color::Cyan)
+        } else {
+            Style::default()
+        };
+        f.render_widget(
+            Paragraph::new(edit.title.clone())
+                .block(Block::default().title("Title").borders(Borders::ALL).border_style(title_style)),
+            chunks[1],
+        );
+
+        let desc_style = if edit.focus_description {
+            Style::default().fg(Color::Cyan)
+        } else {
+            Style::default()
+        };
+        f.render_widget(
+            Paragraph::new(edit.description.clone())
+                .wrap(Wrap { trim: false })
+                .block(Block::default().title("Description").borders(Borders::ALL).border_style(desc_style)),
+            chunks[2],
+        );
+
+        f.render_widget(
+            Paragraph::new("Tab: switch field  Enter: save  Esc: cancel")
+                .style(Style::default().fg(Color::DarkGray))
+                .alignment(ratatui::layout::Alignment::Center),
+            chunks[3],
+        );
+
+        // Position cursor
+        if !edit.focus_description {
+            f.set_cursor_position((
+                chunks[1].x + 1 + edit.cursor_pos as u16,
+                chunks[1].y + 1,
+            ));
+        } else {
+            // For multiline description, simple cursor positioning at the end
+            let lines = edit.description.lines().count().max(1) as u16;
+            let last_line_len = edit.description.lines().last().unwrap_or("").len() as u16;
+            f.set_cursor_position((
+                chunks[2].x + 1 + last_line_len,
+                chunks[2].y + lines,
+            ));
+        }
+
+        f.render_widget(
+            Block::default()
+                .borders(Borders::ALL)
+                .title("Edit Card")
+                .border_style(Style::default().fg(Color::Cyan)),
             area,
         );
     }
