@@ -25,6 +25,77 @@ pub struct EditState {
     pub focus_description: bool,
 }
 
+impl EditState {
+    pub fn current_text(&self) -> &str {
+        if self.focus_description {
+            &self.description
+        } else {
+            &self.title
+        }
+    }
+
+    pub fn current_text_mut(&mut self) -> &mut String {
+        if self.focus_description {
+            &mut self.description
+        } else {
+            &mut self.title
+        }
+    }
+
+    pub fn insert_char(&mut self, c: char) {
+        let pos = self.cursor_pos;
+        let text = self.current_text_mut();
+        if pos >= text.len() {
+            text.push(c);
+        } else {
+            text.insert(pos, c);
+        }
+        self.cursor_pos += c.len_utf8();
+    }
+
+    pub fn delete_prev(&mut self) {
+        if self.cursor_pos > 0 {
+            let pos = self.cursor_pos;
+            let text = self.current_text_mut();
+            // Simple backspace for ASCII, might need more for Unicode but let's keep it simple for now as it's a TUI.
+            // Actually, find the previous char boundary.
+            if let Some((idx, _)) = text.char_indices().filter(|(i, _)| *i < pos).last() {
+                text.remove(idx);
+                self.cursor_pos = idx;
+            }
+        }
+    }
+
+    pub fn delete_curr(&mut self) {
+        let pos = self.cursor_pos;
+        let text = self.current_text_mut();
+        if pos < text.len() {
+            text.remove(pos);
+            // cursor_pos stays the same
+        }
+    }
+
+    pub fn move_cursor_left(&mut self) {
+        if self.cursor_pos > 0 {
+            let text = self.current_text();
+            let pos = self.cursor_pos;
+            if let Some((idx, _)) = text.char_indices().filter(|(i, _)| *i < pos).last() {
+                self.cursor_pos = idx;
+            }
+        }
+    }
+
+    pub fn move_cursor_right(&mut self) {
+        let text = self.current_text();
+        let pos = self.cursor_pos;
+        if let Some((idx, _)) = text.char_indices().filter(|(i, _)| *i > pos).next() {
+            self.cursor_pos = idx;
+        } else if pos < text.len() {
+            self.cursor_pos = text.len();
+        }
+    }
+}
+
 pub struct App {
     pub board: Board,
     pub col: usize,

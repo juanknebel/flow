@@ -130,11 +130,7 @@ fn run_tui(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> io::Result<
                             }
                             crossterm::event::KeyCode::Tab => {
                                 edit.focus_description = !edit.focus_description;
-                                edit.cursor_pos = if edit.focus_description {
-                                    edit.description.len()
-                                } else {
-                                    edit.title.len()
-                                };
+                                edit.cursor_pos = edit.current_text().len();
                             }
                             crossterm::event::KeyCode::Enter => {
                                 let card_id = edit.card_id.clone();
@@ -155,20 +151,25 @@ fn run_tui(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> io::Result<
                                 app.edit_state = None;
                             }
                             crossterm::event::KeyCode::Char(c) => {
-                                if edit.focus_description {
-                                    edit.description.push(c);
-                                } else {
-                                    edit.title.push(c);
-                                    edit.cursor_pos = edit.title.len();
-                                }
+                                edit.insert_char(c);
                             }
                             crossterm::event::KeyCode::Backspace => {
-                                if edit.focus_description {
-                                    edit.description.pop();
-                                } else {
-                                    edit.title.pop();
-                                    edit.cursor_pos = edit.title.len();
-                                }
+                                edit.delete_prev();
+                            }
+                            crossterm::event::KeyCode::Delete => {
+                                edit.delete_curr();
+                            }
+                            crossterm::event::KeyCode::Left => {
+                                edit.move_cursor_left();
+                            }
+                            crossterm::event::KeyCode::Right => {
+                                edit.move_cursor_right();
+                            }
+                            crossterm::event::KeyCode::Home => {
+                                edit.cursor_pos = 0;
+                            }
+                            crossterm::event::KeyCode::End => {
+                                edit.cursor_pos = edit.current_text().len();
                             }
                             _ => {}
                         }

@@ -17,8 +17,8 @@ Opening a browser just to move an issue is slow and breaks focus.
 - **Reusable Library**: Exported components, models, and UI logic for integration into other Rust TUI apps.
 - **Multiple Providers**: Local filesystem (Markdown-based) and Jira Cloud support.
 - **Keyboard-first**: One-keystroke transitions (`H` / `L`), `hjkl` and arrow-key navigation.
-- **Integrated Editing**: Create/edit cards directly in an integrated popup.
-- **Clean Visuals**: Terminal-native design powered by `ratatui`.
+- **Integrated Editing**: Create/edit cards directly in an integrated popup with full cursor support, word wrapping, and familiar shortcuts.
+- **Clean Visuals**: Terminal-native design powered by `ratatui` with responsive layouts.
 
 ## As a Library
 You can use `flow` as a crate in your own Rust projects to add Kanban boards to your terminal UIs.
@@ -79,16 +79,28 @@ JIRA_BOARD_ID=123
 ```
 
 ## Keybindings
-- `h` / `l` **or** `←` / `→` — focus column
-- `j` / `k` **or** `↑` / `↓` — select card
+
+### Navigation
+- `h` / `l` or `←` / `→` — focus column
+- `j` / `k` or `↑` / `↓` — select card
 - `H` / `L` — move card left / right
-- `a` / `n` — create a new card (integrated popup)
-- `e` — edit selected card (integrated popup)
-- `d` — delete selected card with confirmation
-- `Enter` — toggle description
+- `Enter` — toggle detail view
 - `r` — reload board from disk
 - `Esc` — close popup / cancel / quit
 - `q` — quit
+
+### Card Actions
+- `a` / `n` — create a new card
+- `e` — edit selected card
+- `d` — delete selected card with confirmation
+
+### Integrated Editor
+- `←` / `→` — move cursor
+- `Home` / `End` — move to start/end of line
+- `Backspace` / `Delete` — delete character
+- `Tab` — switch between Title and Description
+- `Enter` — save and close
+- `Esc` — cancel changes
 
 ## CLI Usage
 `flow` can also be used as a CLI tool for scripts or quick actions:
