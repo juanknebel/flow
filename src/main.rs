@@ -19,7 +19,9 @@ use ratatui::{
 use clap::Parser;
 use flow::{
     App, Action, Board,
+    app::{EditState, EditFocus},
     cli, provider,
+    model::Priority,
     ui::{render, action_from_key}
 };
 
@@ -129,14 +131,17 @@ fn run_tui(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> io::Result<
                                 app.edit_state = None;
                             }
                             crossterm::event::KeyCode::Tab => {
-                                edit.focus_description = !edit.focus_description;
-                                edit.cursor_pos = edit.current_text().len();
+                                edit.focus = edit.focus.next();
+                                if edit.focus != EditFocus::Priority {
+                                    edit.cursor_pos = edit.current_text().len();
+                                }
                             }
                             crossterm::event::KeyCode::Enter => {
                                 let card_id = edit.card_id.clone();
                                 let title = edit.title.clone();
                                 let description = edit.description.clone();
-                                if let Err(e) = provider.update_card(&card_id, &title, &description) {
+                                let priority = edit.priority;
+                                if let Err(e) = provider.update_card(&card_id, &title, &description, priority) {
                                     app.banner = Some(format!("Save failed: {e}"));
                                 } else {
                                     match provider.load_board() {
@@ -166,10 +171,14 @@ fn run_tui(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> io::Result<
                                 edit.move_cursor_right();
                             }
                             crossterm::event::KeyCode::Home => {
-                                edit.cursor_pos = 0;
+                                if edit.focus != EditFocus::Priority {
+                                    edit.cursor_pos = 0;
+                                }
                             }
                             crossterm::event::KeyCode::End => {
-                                edit.cursor_pos = edit.current_text().len();
+                                if edit.focus != EditFocus::Priority {
+                                    edit.cursor_pos = edit.current_text().len();
+                                }
                             }
                             _ => {}
                         }
@@ -223,12 +232,13 @@ fn run_tui(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> io::Result<
                                 };
                                 match provider.create_card(&col.id) {
                                     Ok(id) => {
-                                        app.edit_state = Some(flow::app::EditState {
+                                        app.edit_state = Some(EditState {
                                             card_id: id,
                                             title: "New card".to_string(),
                                             description: "".to_string(),
+                                            priority: Priority::Medium,
                                             cursor_pos: 8,
-                                            focus_description: false,
+                                            focus: EditFocus::Title,
                                         });
                                     }
                                     Err(e) => {
@@ -250,12 +260,13 @@ fn run_tui(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> io::Result<
                                     app.banner = Some("Edit failed: no card selected".to_string());
                                     continue;
                                 };
-                                app.edit_state = Some(flow::app::EditState {
+                                app.edit_state = Some(EditState {
                                     card_id: card.id.clone(),
                                     title: card.title.clone(),
                                     description: card.description.clone(),
+                                    priority: card.priority,
                                     cursor_pos: card.title.len(),
-                                    focus_description: false,
+                                    focus: EditFocus::Title,
                                 });
                             }
                             Action::MoveLeft => {

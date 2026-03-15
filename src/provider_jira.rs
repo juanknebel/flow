@@ -4,7 +4,7 @@ use reqwest::blocking::Client;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    model::{Board, Card, Column},
+    model::{Board, Card, Column, Priority},
     provider::{Provider, ProviderError},
 };
 
@@ -232,6 +232,7 @@ impl Provider for JiraProvider {
                 id: issue.key,
                 title: issue.fields.summary,
                 description: desc,
+                priority: Priority::Medium,
             });
         }
 

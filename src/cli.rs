@@ -3,6 +3,7 @@ use std::io;
 use clap::{Parser, Subcommand};
 
 use crate::format::{self, Format};
+use crate::model::Priority;
 use crate::provider;
 use crate::store_fs;
 
@@ -18,7 +19,8 @@ With a subcommand, performs the action and prints the result to stdout.
 
 BOARD MODEL:
   A board has ordered columns. Each column has an id, a title, and cards.
-  Each card has an id (e.g. FLOW-1), a title, and an optional description.
+  Each card has an id (e.g. FLOW-1), a title, an optional description,
+  and a priority (LOW, MEDIUM, HIGH, BUG, WISHLIST).
   Cards live in exactly one column and can be moved between them.
 
 TYPICAL WORKFLOW:
@@ -46,8 +48,8 @@ EXAMPLES:
   flow list -f json
   flow columns -f csv
   flow show FLOW-1
-  flow create todo \"Fix login bug\" --body \"Users report 500 on /login\"
-  flow edit FLOW-1 --title \"Updated title\"
+  flow create todo \"Fix login bug\" --body \"Users report 500 on /login\" --priority high
+  flow edit FLOW-1 --title \"Updated title\" --priority bug
   flow move FLOW-1 done"
 )]
 pub struct Cli {
@@ -87,9 +89,12 @@ pub enum Command {
         /// Card body / description
         #[arg(long)]
         body: Option<String>,
+        /// Card priority: low, medium, high, bug, wishlist (default: medium)
+        #[arg(long)]
+        priority: Option<String>,
     },
 
-    /// Update a card's title and/or body (at least one required)
+    /// Update a card's title, body, and/or priority
     Edit {
         /// Card identifier to edit
         card_id: String,
@@ -99,6 +104,9 @@ pub enum Command {
         /// New body / description (keeps current if omitted)
         #[arg(long)]
         body: Option<String>,
+        /// New priority: low, medium, high, bug, wishlist (keeps current if omitted)
+        #[arg(long)]
+        priority: Option<String>,
     },
 
     /// Delete a card permanently
@@ -153,18 +161,20 @@ pub fn run(cmd: Command, fmt: Format) -> io::Result<()> {
             column_id,
             title,
             body,
+            priority,
         } => {
             let card_id = prov
                 .create_card(&column_id)
                 .map_err(|e| io::Error::other(e.to_string()))?;
 
-            if title.is_some() || body.is_some() {
+            if title.is_some() || body.is_some() || priority.is_some() {
                 let path = prov
                     .card_path(&card_id)
                     .map_err(|e| io::Error::other(e.to_string()))?;
                 let t = title.as_deref().unwrap_or("New card");
                 let b = body.as_deref().unwrap_or("");
-                store_fs::write_card_content(&path, t, b)?;
+                let p = priority.as_deref().map(Priority::from_str).unwrap_or(Priority::Medium);
+                store_fs::write_card_content(&path, t, b, p)?;
             }
 
             println!(
@@ -183,10 +193,11 @@ pub fn run(cmd: Command, fmt: Format) -> io::Result<()> {
             card_id,
             title,
             body,
+            priority,
         } => {
-            if title.is_none() && body.is_none() {
+            if title.is_none() && body.is_none() && priority.is_none() {
                 return Err(io::Error::other(
-                    "edit requires at least --title or --body",
+                    "edit requires at least --title, --body, or --priority",
                 ));
             }
 
@@ -194,10 +205,11 @@ pub fn run(cmd: Command, fmt: Format) -> io::Result<()> {
                 .card_path(&card_id)
                 .map_err(|e| io::Error::other(e.to_string()))?;
 
-            let (cur_title, cur_body) = store_fs::read_card_content(&path)?;
+            let (cur_title, cur_body, cur_priority) = store_fs::read_card_content(&path)?;
             let t = title.as_deref().unwrap_or(&cur_title);
             let b = body.as_deref().unwrap_or(&cur_body);
-            store_fs::write_card_content(&path, t, b)?;
+            let p = priority.as_deref().map(Priority::from_str).unwrap_or(cur_priority);
+            store_fs::write_card_content(&path, t, b, p)?;
 
             println!(
                 "{}",

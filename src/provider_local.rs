@@ -4,7 +4,7 @@ use std::{
 };
 
 use crate::{
-    model::Board,
+    model::{Board, Priority},
     provider::{Provider, ProviderError},
     store_fs,
 };
@@ -90,9 +90,9 @@ impl Provider for LocalProvider {
         })
     }
 
-    fn update_card(&mut self, card_id: &str, title: &str, description: &str) -> Result<(), ProviderError> {
+    fn update_card(&mut self, card_id: &str, title: &str, description: &str, priority: Priority) -> Result<(), ProviderError> {
         let path = self.card_path(card_id)?;
-        store_fs::write_card_content(&path, title, description).map_err(|err| ProviderError::Io {
+        store_fs::write_card_content(&path, title, description, priority).map_err(|err| ProviderError::Io {
             op: "update_card".to_string(),
             path,
             source: err,

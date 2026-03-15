@@ -1,4 +1,4 @@
-use crate::model::Board;
+use crate::model::{Board, Priority};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Action {
@@ -17,32 +17,53 @@ pub enum Action {
     Edit,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum EditFocus {
+    Title,
+    Description,
+    Priority,
+}
+
+impl EditFocus {
+    pub fn next(self) -> Self {
+        match self {
+            EditFocus::Title => EditFocus::Priority,
+            EditFocus::Priority => EditFocus::Description,
+            EditFocus::Description => EditFocus::Title,
+        }
+    }
+}
+
 pub struct EditState {
     pub card_id: String,
     pub title: String,
     pub description: String,
+    pub priority: Priority,
     pub cursor_pos: usize,
-    pub focus_description: bool,
+    pub focus: EditFocus,
 }
 
 impl EditState {
     pub fn current_text(&self) -> &str {
-        if self.focus_description {
-            &self.description
-        } else {
-            &self.title
+        match self.focus {
+            EditFocus::Title => &self.title,
+            EditFocus::Description => &self.description,
+            EditFocus::Priority => "",
         }
     }
 
     pub fn current_text_mut(&mut self) -> &mut String {
-        if self.focus_description {
-            &mut self.description
-        } else {
-            &mut self.title
+        match self.focus {
+            EditFocus::Title => &mut self.title,
+            EditFocus::Description => &mut self.description,
+            EditFocus::Priority => &mut self.title, // unused for priority, but must return something
         }
     }
 
     pub fn insert_char(&mut self, c: char) {
+        if self.focus == EditFocus::Priority {
+            return;
+        }
         let pos = self.cursor_pos;
         let text = self.current_text_mut();
         if pos >= text.len() {
@@ -54,11 +75,12 @@ impl EditState {
     }
 
     pub fn delete_prev(&mut self) {
+        if self.focus == EditFocus::Priority {
+            return;
+        }
         if self.cursor_pos > 0 {
             let pos = self.cursor_pos;
             let text = self.current_text_mut();
-            // Simple backspace for ASCII, might need more for Unicode but let's keep it simple for now as it's a TUI.
-            // Actually, find the previous char boundary.
             if let Some((idx, _)) = text.char_indices().filter(|(i, _)| *i < pos).last() {
                 text.remove(idx);
                 self.cursor_pos = idx;
@@ -67,15 +89,21 @@ impl EditState {
     }
 
     pub fn delete_curr(&mut self) {
+        if self.focus == EditFocus::Priority {
+            return;
+        }
         let pos = self.cursor_pos;
         let text = self.current_text_mut();
         if pos < text.len() {
             text.remove(pos);
-            // cursor_pos stays the same
         }
     }
 
     pub fn move_cursor_left(&mut self) {
+        if self.focus == EditFocus::Priority {
+            self.priority = self.priority.prev();
+            return;
+        }
         if self.cursor_pos > 0 {
             let text = self.current_text();
             let pos = self.cursor_pos;
@@ -86,6 +114,10 @@ impl EditState {
     }
 
     pub fn move_cursor_right(&mut self) {
+        if self.focus == EditFocus::Priority {
+            self.priority = self.priority.next();
+            return;
+        }
         let text = self.current_text();
         let pos = self.cursor_pos;
         if let Some((idx, _)) = text.char_indices().filter(|(i, _)| *i > pos).next() {
@@ -277,7 +309,16 @@ fn first_non_empty_column(board: &Board) -> Option<usize> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::{Board, Card, Column};
+    use crate::model::{Board, Card, Column, Priority};
+
+    fn card(id: &str, title: &str) -> Card {
+        Card {
+            id: id.into(),
+            title: title.into(),
+            description: "d".into(),
+            priority: Priority::Medium,
+        }
+    }
 
     fn board_two_cols() -> Board {
         Board {
@@ -285,18 +326,7 @@ mod tests {
                 Column {
                     id: "a".into(),
                     title: "A".into(),
-                    cards: vec![
-                        Card {
-                            id: "1".into(),
-                            title: "t1".into(),
-                            description: "d".into(),
-                        },
-                        Card {
-                            id: "2".into(),
-                            title: "t2".into(),
-                            description: "d".into(),
-                        },
-                    ],
+                    cards: vec![card("1", "t1"), card("2", "t2")],
                 },
                 Column {
                     id: "b".into(),
@@ -326,11 +356,7 @@ mod tests {
         app.focus(10);
         assert_eq!(app.col, 0);
 
-        app.board.columns[1].cards.push(Card {
-            id: "3".into(),
-            title: "t3".into(),
-            description: "d".into(),
-        });
+        app.board.columns[1].cards.push(card("3", "t3"));
         app.focus(1);
         assert_eq!(app.col, 1);
     }
@@ -393,11 +419,7 @@ mod tests {
         let mut app = App::new(board_two_cols());
 
         app.board.columns[0].cards.clear();
-        app.board.columns[1].cards.push(Card {
-            id: "2".to_string(),
-            title: "t2".to_string(),
-            description: "d".to_string(),
-        });
+        app.board.columns[1].cards.push(card("2", "t2"));
         app.focus_first_non_empty();
 
         assert_eq!((app.col, app.row), (1, 0));
@@ -412,5 +434,12 @@ mod tests {
         assert!(!app.detail_open);
 
         assert!(app.apply(Action::CloseOrQuit));
+    }
+
+    #[test]
+    fn edit_focus_cycles() {
+        assert_eq!(EditFocus::Title.next(), EditFocus::Priority);
+        assert_eq!(EditFocus::Priority.next(), EditFocus::Description);
+        assert_eq!(EditFocus::Description.next(), EditFocus::Title);
     }
 }

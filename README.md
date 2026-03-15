@@ -17,6 +17,7 @@ Opening a browser just to move an issue is slow and breaks focus.
 - **Reusable Library**: Exported components, models, and UI logic for integration into other Rust TUI apps.
 - **Multiple Providers**: Local filesystem (Markdown-based) and Jira Cloud support.
 - **Keyboard-first**: One-keystroke transitions (`H` / `L`), `hjkl` and arrow-key navigation.
+- **Card Priority**: Color-coded priority levels (Low, Medium, High, Bug, Wishlist) visible on the board and editable in the popup.
 - **Integrated Editing**: Create/edit cards directly in an integrated popup with full cursor support, word wrapping, and familiar shortcuts.
 - **Clean Visuals**: Terminal-native design powered by `ratatui` with responsive layouts.
 
@@ -68,6 +69,23 @@ Local boards default to:
 ~/.config/flow/boards/default
 ```
 
+### Card file format
+Each card is a Markdown file with optional YAML frontmatter for priority:
+```markdown
+---
+priority: HIGH
+---
+# Card title
+
+Description body
+```
+Valid priorities: `LOW`, `MEDIUM`, `HIGH`, `BUG`, `WISHLIST`. Files without frontmatter default to `MEDIUM`.
+
+To migrate existing cards, run the included script:
+```bash
+./scripts/migrate-priority.sh /path/to/board
+```
+
 ## Jira mode
 To load issues from Jira, set:
 ```bash
@@ -95,10 +113,10 @@ JIRA_BOARD_ID=123
 - `d` — delete selected card with confirmation
 
 ### Integrated Editor
-- `←` / `→` — move cursor
+- `←` / `→` — move cursor (cycle priority when Priority field is focused)
 - `Home` / `End` — move to start/end of line
 - `Backspace` / `Delete` — delete character
-- `Tab` — switch between Title and Description
+- `Tab` — cycle focus: Title → Priority → Description
 - `Enter` — save and close
 - `Esc` — cancel changes
 
@@ -113,7 +131,10 @@ flow list
 flow show FLOW-1
 
 # Create a new card
-flow create todo "My new task" --body "Some details"
+flow create todo "My new task" --body "Some details" --priority high
+
+# Edit a card's priority
+flow edit FLOW-1 --priority bug
 
 # Move a card to another column
 flow move FLOW-1 in_progress

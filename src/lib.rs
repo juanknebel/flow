@@ -9,5 +9,5 @@ pub mod store_fs;
 pub mod ui;
 
 pub use app::{App, Action};
-pub use model::{Board, Card, Column};
+pub use model::{Board, Card, Column, Priority};
 pub use provider::{Provider, ProviderError};

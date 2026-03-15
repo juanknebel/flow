@@ -39,6 +39,16 @@ Single-crate Rust project (edition 2024). All source is in `src/`.
 - **Move queue**: Rapid moves queue up (max 64). The queue drains sequentially, one background move at a time.
 - **Provider is created fresh per background move** (`provider::from_env()` in `spawn_move`) since providers aren't `Send`.
 
+## Task management
+
+This project uses `flow` itself as its Kanban task board. The project board lives in `./.board` (gitignored).
+
+```bash
+FLOW_BOARD_PATH=./.board cargo run -- --help   # see available commands
+```
+
+Use this board to track tasks, bugs, and features for the project.
+
 ## Commit style
 
 Conventional commits with optional scope: `feat(jira):`, `fix:`, `refactor(local):`, `chore:`.

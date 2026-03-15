@@ -1,7 +1,69 @@
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Priority {
+    Low,
+    Medium,
+    High,
+    Bug,
+    Wishlist,
+}
+
+impl Priority {
+    pub fn label(&self) -> &'static str {
+        match self {
+            Priority::Low => "LOW",
+            Priority::Medium => "MEDIUM",
+            Priority::High => "HIGH",
+            Priority::Bug => "BUG",
+            Priority::Wishlist => "WISHLIST",
+        }
+    }
+
+    pub fn short_label(&self) -> &'static str {
+        match self {
+            Priority::Low => "L",
+            Priority::Medium => "M",
+            Priority::High => "H",
+            Priority::Bug => "BUG",
+            Priority::Wishlist => "W",
+        }
+    }
+
+    pub fn from_str(s: &str) -> Self {
+        match s.trim().to_lowercase().as_str() {
+            "low" | "l" => Priority::Low,
+            "high" | "h" => Priority::High,
+            "bug" => Priority::Bug,
+            "wishlist" | "wish" | "w" => Priority::Wishlist,
+            _ => Priority::Medium,
+        }
+    }
+
+    pub fn next(&self) -> Self {
+        match self {
+            Priority::Low => Priority::Medium,
+            Priority::Medium => Priority::High,
+            Priority::High => Priority::Bug,
+            Priority::Bug => Priority::Wishlist,
+            Priority::Wishlist => Priority::Low,
+        }
+    }
+
+    pub fn prev(&self) -> Self {
+        match self {
+            Priority::Low => Priority::Wishlist,
+            Priority::Medium => Priority::Low,
+            Priority::High => Priority::Medium,
+            Priority::Bug => Priority::High,
+            Priority::Wishlist => Priority::Bug,
+        }
+    }
+}
+
 pub struct Card {
     pub id: String,
     pub title: String,
     pub description: String,
+    pub priority: Priority,
 }
 
 pub struct Column {

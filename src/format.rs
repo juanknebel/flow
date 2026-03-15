@@ -31,6 +31,7 @@ struct ColumnOut {
 struct CardOut {
     id: String,
     title: String,
+    priority: String,
 }
 
 pub fn format_board(board: &Board, fmt: Format) -> String {
@@ -40,7 +41,7 @@ pub fn format_board(board: &Board, fmt: Format) -> String {
             for col in &board.columns {
                 out.push_str(&format!("== {} ({}) ==\n", col.title, col.cards.len()));
                 for card in &col.cards {
-                    out.push_str(&format!("{}  {}\n", card.id, card.title));
+                    out.push_str(&format!("{}  {}  {}\n", card.id, card.priority.label(), card.title));
                 }
                 out.push('\n');
             }
@@ -57,9 +58,10 @@ pub fn format_board(board: &Board, fmt: Format) -> String {
                 ));
                 for card in &col.cards {
                     out.push_str(&format!(
-                        "    <card id=\"{}\" title=\"{}\"/>\n",
+                        "    <card id=\"{}\" title=\"{}\" priority=\"{}\"/>\n",
                         xml_esc(&card.id),
-                        xml_esc(&card.title)
+                        xml_esc(&card.title),
+                        xml_esc(card.priority.label()),
                     ));
                 }
                 out.push_str("  </column>\n");
@@ -68,31 +70,33 @@ pub fn format_board(board: &Board, fmt: Format) -> String {
             out
         }
         Format::Csv => {
-            let mut out = String::from("column_id,column_title,card_id,card_title\n");
+            let mut out = String::from("column_id,column_title,card_id,card_title,priority\n");
             for col in &board.columns {
                 for card in &col.cards {
                     out.push_str(&format!(
-                        "{},{},{},{}\n",
+                        "{},{},{},{},{}\n",
                         csv_esc(&col.id),
                         csv_esc(&col.title),
                         csv_esc(&card.id),
-                        csv_esc(&card.title)
+                        csv_esc(&card.title),
+                        csv_esc(card.priority.label()),
                     ));
                 }
             }
             chomp(out)
         }
         Format::Table => {
-            let headers = ["COLUMN", "ID", "TITLE"];
+            let headers = ["COLUMN", "ID", "PRIORITY", "TITLE"];
             let mut rows = Vec::new();
             for col in &board.columns {
                 if col.cards.is_empty() {
-                    rows.push(vec![col.title.clone(), String::new(), String::new()]);
+                    rows.push(vec![col.title.clone(), String::new(), String::new(), String::new()]);
                 } else {
                     for card in &col.cards {
                         rows.push(vec![
                             col.title.clone(),
                             card.id.clone(),
+                            card.priority.label().to_string(),
                             card.title.clone(),
                         ]);
                     }
@@ -105,7 +109,7 @@ pub fn format_board(board: &Board, fmt: Format) -> String {
             for col in &board.columns {
                 out.push_str(&format!("## {} ({})\n", col.title, col.cards.len()));
                 for card in &col.cards {
-                    out.push_str(&format!("- **{}** {}\n", card.id, card.title));
+                    out.push_str(&format!("- **{}** [{}] {}\n", card.id, card.priority.label(), card.title));
                 }
                 out.push('\n');
             }
@@ -128,6 +132,7 @@ fn board_dto(board: &Board) -> BoardOut {
                     .map(|c| CardOut {
                         id: c.id.clone(),
                         title: c.title.clone(),
+                        priority: c.priority.label().to_string(),
                     })
                     .collect(),
             })
@@ -142,6 +147,7 @@ struct CardDetailOut {
     id: String,
     title: String,
     description: String,
+    priority: String,
     column_id: String,
     column_title: String,
 }
@@ -149,7 +155,7 @@ struct CardDetailOut {
 pub fn format_card(card: &Card, col_id: &str, col_title: &str, fmt: Format) -> String {
     match fmt {
         Format::Plain => {
-            let mut out = format!("{}\n{}\ncolumn: {} ({})\n", card.id, card.title, col_title, col_id);
+            let mut out = format!("{}\n{}\npriority: {}\ncolumn: {} ({})\n", card.id, card.title, card.priority.label(), col_title, col_id);
             if !card.description.trim().is_empty() {
                 out.push('\n');
                 out.push_str(&card.description);
@@ -160,15 +166,17 @@ pub fn format_card(card: &Card, col_id: &str, col_title: &str, fmt: Format) -> S
             id: card.id.clone(),
             title: card.title.clone(),
             description: card.description.clone(),
+            priority: card.priority.label().to_string(),
             column_id: col_id.to_string(),
             column_title: col_title.to_string(),
         })
         .unwrap(),
         Format::Xml => {
             let mut out = format!(
-                "<card id=\"{}\" title=\"{}\" column_id=\"{}\" column_title=\"{}\">",
+                "<card id=\"{}\" title=\"{}\" priority=\"{}\" column_id=\"{}\" column_title=\"{}\">",
                 xml_esc(&card.id),
                 xml_esc(&card.title),
+                xml_esc(card.priority.label()),
                 xml_esc(col_id),
                 xml_esc(col_title),
             );
@@ -182,12 +190,13 @@ pub fn format_card(card: &Card, col_id: &str, col_title: &str, fmt: Format) -> S
             out
         }
         Format::Csv => {
-            let mut out = String::from("id,title,description,column_id,column_title\n");
+            let mut out = String::from("id,title,description,priority,column_id,column_title\n");
             out.push_str(&format!(
-                "{},{},{},{},{}",
+                "{},{},{},{},{},{}",
                 csv_esc(&card.id),
                 csv_esc(&card.title),
                 csv_esc(&card.description),
+                csv_esc(card.priority.label()),
                 csv_esc(col_id),
                 csv_esc(col_title),
             ));
@@ -198,13 +207,14 @@ pub fn format_card(card: &Card, col_id: &str, col_title: &str, fmt: Format) -> S
             let rows = vec![
                 vec!["id".to_string(), card.id.clone()],
                 vec!["title".to_string(), card.title.clone()],
+                vec!["priority".to_string(), card.priority.label().to_string()],
                 vec!["column".to_string(), format!("{col_title} ({col_id})")],
                 vec!["description".to_string(), card.description.clone()],
             ];
             format_table(&headers, &rows)
         }
         Format::Markdown => {
-            let mut out = format!("# {}\n**{}**\n\nColumn: {} (`{}`)\n", card.title, card.id, col_title, col_id);
+            let mut out = format!("# {}\n**{}** | Priority: {}\n\nColumn: {} (`{}`)\n", card.title, card.id, card.priority.label(), col_title, col_id);
             if !card.description.trim().is_empty() {
                 out.push_str(&format!("\n---\n\n{}\n", card.description));
             }
@@ -419,7 +429,7 @@ fn chomp(mut s: String) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::{Board, Card, Column};
+    use crate::model::{Board, Card, Column, Priority};
 
     fn sample_board() -> Board {
         Board {
@@ -431,6 +441,7 @@ mod tests {
                         id: "FLOW-1".into(),
                         title: "First task".into(),
                         description: "Details here".into(),
+                        priority: Priority::Medium,
                     }],
                 },
                 Column {
@@ -448,7 +459,7 @@ mod tests {
     fn board_plain() {
         let out = format_board(&sample_board(), Format::Plain);
         assert!(out.contains("== To Do (1) =="));
-        assert!(out.contains("FLOW-1  First task"));
+        assert!(out.contains("FLOW-1  MEDIUM  First task"));
         assert!(out.contains("== Done (0) =="));
     }
 
@@ -457,6 +468,7 @@ mod tests {
         let out = format_board(&sample_board(), Format::Json);
         let v: serde_json::Value = serde_json::from_str(&out).unwrap();
         assert_eq!(v["columns"][0]["cards"][0]["id"], "FLOW-1");
+        assert_eq!(v["columns"][0]["cards"][0]["priority"], "MEDIUM");
         assert_eq!(v["columns"][0]["id"], "todo");
         assert_eq!(v["columns"].as_array().unwrap().len(), 2);
     }
@@ -465,9 +477,8 @@ mod tests {
     fn board_csv_has_header_and_rows() {
         let out = format_board(&sample_board(), Format::Csv);
         let lines: Vec<&str> = out.lines().collect();
-        assert_eq!(lines[0], "column_id,column_title,card_id,card_title");
-        assert_eq!(lines[1], "todo,To Do,FLOW-1,First task");
-        // empty column produces no row
+        assert_eq!(lines[0], "column_id,column_title,card_id,card_title,priority");
+        assert_eq!(lines[1], "todo,To Do,FLOW-1,First task,MEDIUM");
         assert_eq!(lines.len(), 2);
     }
 
@@ -477,6 +488,7 @@ mod tests {
         assert!(out.starts_with("<board>"));
         assert!(out.ends_with("</board>"));
         assert!(out.contains("id=\"FLOW-1\""));
+        assert!(out.contains("priority=\"MEDIUM\""));
         assert!(out.contains("title=\"To Do\""));
     }
 
@@ -486,16 +498,18 @@ mod tests {
         let lines: Vec<&str> = out.lines().collect();
         assert!(lines[0].contains("COLUMN"));
         assert!(lines[0].contains("ID"));
+        assert!(lines[0].contains("PRIORITY"));
         assert!(lines[0].contains("TITLE"));
         assert!(lines[1].contains("---"));
         assert!(lines[2].contains("FLOW-1"));
+        assert!(lines[2].contains("MEDIUM"));
     }
 
     #[test]
     fn board_markdown() {
         let out = format_board(&sample_board(), Format::Markdown);
         assert!(out.contains("## To Do (1)"));
-        assert!(out.contains("- **FLOW-1** First task"));
+        assert!(out.contains("- **FLOW-1** [MEDIUM] First task"));
         assert!(out.contains("## Done (0)"));
     }
 
@@ -506,6 +520,7 @@ mod tests {
             id: "X-1".into(),
             title: "My task".into(),
             description: "Some details".into(),
+            priority: Priority::High,
         }
     }
 
@@ -514,6 +529,7 @@ mod tests {
         let out = format_card(&sample_card(), "todo", "To Do", Format::Plain);
         assert!(out.contains("X-1"));
         assert!(out.contains("My task"));
+        assert!(out.contains("priority: HIGH"));
         assert!(out.contains("column: To Do (todo)"));
         assert!(out.contains("Some details"));
     }
@@ -524,6 +540,7 @@ mod tests {
             id: "X-2".into(),
             title: "No desc".into(),
             description: "  ".into(),
+            priority: Priority::Low,
         };
         let out = format_card(&card, "done", "Done", Format::Plain);
         assert!(!out.contains("  \n"));
@@ -537,6 +554,7 @@ mod tests {
         assert_eq!(v["id"], "X-1");
         assert_eq!(v["title"], "My task");
         assert_eq!(v["description"], "Some details");
+        assert_eq!(v["priority"], "HIGH");
         assert_eq!(v["column_id"], "todo");
         assert_eq!(v["column_title"], "To Do");
     }
@@ -547,14 +565,16 @@ mod tests {
         assert!(out.starts_with("<card "));
         assert!(out.ends_with("</card>"));
         assert!(out.contains("<description>"));
+        assert!(out.contains("priority=\"HIGH\""));
     }
 
     #[test]
     fn card_csv_has_header_and_row() {
         let out = format_card(&sample_card(), "todo", "To Do", Format::Csv);
         let lines: Vec<&str> = out.lines().collect();
-        assert_eq!(lines[0], "id,title,description,column_id,column_title");
+        assert_eq!(lines[0], "id,title,description,priority,column_id,column_title");
         assert!(lines[1].contains("X-1"));
+        assert!(lines[1].contains("HIGH"));
     }
 
     #[test]
@@ -563,6 +583,7 @@ mod tests {
         assert!(out.contains("FIELD"));
         assert!(out.contains("VALUE"));
         assert!(out.contains("My task"));
+        assert!(out.contains("HIGH"));
     }
 
     #[test]
@@ -570,6 +591,7 @@ mod tests {
         let out = format_card(&sample_card(), "todo", "To Do", Format::Markdown);
         assert!(out.contains("# My task"));
         assert!(out.contains("**X-1**"));
+        assert!(out.contains("Priority: HIGH"));
         assert!(out.contains("Some details"));
     }
 
@@ -697,7 +719,6 @@ mod tests {
     fn table_aligns_columns() {
         let out = format_table(&["A", "BB"], &[vec!["long value".into(), "x".into()]]);
         let lines: Vec<&str> = out.lines().collect();
-        // header and data should have same alignment
         assert_eq!(lines[0].find("BB"), lines[2].find("x"));
     }
 }

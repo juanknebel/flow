@@ -1,6 +1,6 @@
 use std::{fmt, io, path::PathBuf};
 
-use crate::model::Board;
+use crate::model::{Board, Priority};
 
 #[derive(Debug)]
 pub enum ProviderError {
@@ -60,7 +60,7 @@ pub trait Provider {
         })
     }
 
-    fn update_card(&mut self, _card_id: &str, _title: &str, _description: &str) -> Result<(), ProviderError> {
+    fn update_card(&mut self, _card_id: &str, _title: &str, _description: &str, _priority: Priority) -> Result<(), ProviderError> {
         Err(ProviderError::Parse {
             msg: "update_card not supported by current provider".to_string(),
         })
