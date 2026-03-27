@@ -44,10 +44,16 @@ Single-crate Rust project (edition 2024). All source is in `src/`.
 This project uses `flow` itself as its Kanban task board. The project board lives in `./.board` (gitignored).
 
 ```bash
-FLOW_BOARD_PATH=./.board cargo run -- --help   # see available commands
+FLOW_BOARD_PATH=./.board flow list             # list all cards
+FLOW_BOARD_PATH=./.board flow columns          # list columns
+FLOW_BOARD_PATH=./.board flow show <card_id>   # show card details
+FLOW_BOARD_PATH=./.board flow create <col> "title" --priority high
+FLOW_BOARD_PATH=./.board flow move <card_id> <col>
+FLOW_BOARD_PATH=./.board flow edit <card_id> --title "new title"
+FLOW_BOARD_PATH=./.board flow delete <card_id>
 ```
 
-Use this board to track tasks, bugs, and features for the project.
+Use `flow` directly (not `cargo run --`) when the binary is installed. Use this board to track tasks, bugs, and features for the project.
 
 ## Commit style
 
