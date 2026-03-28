@@ -73,3 +73,14 @@ Use `flow-cli` for board management and `flow` to launch the TUI. Use this board
 ## Commit style
 
 Conventional commits with optional scope: `feat(jira):`, `fix:`, `refactor(local):`, `chore:`.
+
+## Releasing a version
+
+When asked to release version X.Y.Z, follow these steps in order:
+
+1. Update `version` in root `Cargo.toml` under `[workspace.package]`
+2. Commit: `chore: bump version to X.Y.Z`
+3. Tag: `git tag X.Y.Z`
+4. Push everything: `git push && git push origin X.Y.Z`
+
+GitHub Actions will build binaries and create the release automatically.

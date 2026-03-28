@@ -1,0 +1,109 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "[0-9]+.[0-9]+.[0-9]+"
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+            suffix: linux-amd64
+          - target: x86_64-apple-darwin
+            os: macos-latest
+            suffix: darwin-amd64
+          - target: aarch64-apple-darwin
+            os: macos-latest
+            suffix: darwin-arm64
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup target add ${{ matrix.target }}
+
+      - name: Install cross-compilation tools (Linux)
+        if: matrix.os == 'ubuntu-latest'
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
+
+      - name: Build release binaries
+        run: cargo build --workspace --release --target ${{ matrix.target }}
+
+      - name: Package binaries
+        run: |
+          mkdir -p dist
+          cp target/${{ matrix.target }}/release/flow dist/flow-${{ matrix.suffix }}
+          cp target/${{ matrix.target }}/release/flow-cli dist/flow-cli-${{ matrix.suffix }}
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: binaries-${{ matrix.suffix }}
+          path: dist/
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Make binaries executable
+        run: chmod +x dist/*
+
+      - name: Generate release notes
+        id: notes
+        run: |
+          TAG=${GITHUB_REF#refs/tags/}
+          PREV_TAG=$(git tag --sort=-v:refname | grep -A1 "^${TAG}$" | tail -1)
+          if [ -z "$PREV_TAG" ] || [ "$PREV_TAG" = "$TAG" ]; then
+            NOTES=$(git log --oneline --no-decorate HEAD | head -20)
+          else
+            NOTES=$(git log --oneline --no-decorate "${PREV_TAG}..${TAG}")
+          fi
+          {
+            echo "notes<<EOFNOTES"
+            echo "## What's Changed"
+            echo ""
+            echo "$NOTES" | sed 's/^/- /'
+            echo ""
+            echo "## Binaries"
+            echo ""
+            echo "| File | Platform |"
+            echo "|------|----------|"
+            echo "| \`flow-linux-amd64\` / \`flow-cli-linux-amd64\` | Linux x86_64 |"
+            echo "| \`flow-darwin-amd64\` / \`flow-cli-darwin-amd64\` | macOS Intel |"
+            echo "| \`flow-darwin-arm64\` / \`flow-cli-darwin-arm64\` | macOS Apple Silicon |"
+            echo "EOFNOTES"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG=${GITHUB_REF#refs/tags/}
+          gh release create "$TAG" dist/* \
+            --title "v${TAG}" \
+            --notes "${{ steps.notes.outputs.notes }}"
