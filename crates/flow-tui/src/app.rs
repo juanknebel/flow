@@ -1,4 +1,4 @@
-use crate::model::{Board, Priority};
+use flow_core::model::{Board, Priority};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Action {
@@ -314,7 +314,7 @@ fn first_non_empty_column(board: &Board) -> Option<usize> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::{Board, Card, Column, Priority};
+    use flow_core::model::{Board, Card, Column, Priority};
 
     fn card(id: &str, title: &str) -> Card {
         Card {

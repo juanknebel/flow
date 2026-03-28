@@ -41,7 +41,7 @@ impl LocalProvider {
         }
 
         Self {
-            root: manifest_dir.join("boards/demo"),
+            root: manifest_dir.join("../../boards/demo"),
         }
     }
 }

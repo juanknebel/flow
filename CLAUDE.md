@@ -9,10 +9,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Build and run
 
 ```bash
-cargo build
-cargo run              # runs in demo/local mode with boards/demo/
-cargo test             # run all tests
-cargo test app::tests  # run tests in a specific module
+cargo build --workspace           # build all crates
+cargo build -p flow               # build TUI binary only
+cargo build -p flow-cli           # build CLI binary only
+cargo test --workspace            # run all tests
+cargo test -p flow-core           # run tests in a specific crate
+cargo install --path crates/flow      # install TUI binary
+cargo install --path crates/flow-cli  # install CLI binary
 ```
 
 ## Environment variables
@@ -23,15 +26,27 @@ cargo test app::tests  # run tests in a specific module
 
 ## Architecture
 
-Single-crate Rust project (edition 2024). All source is in `src/`.
+Cargo workspace (edition 2024) with 4 crates under `crates/`:
 
-- **`model.rs`** — Core data types: `Board`, `Column`, `Card`. No logic, just structs.
-- **`provider.rs`** — `Provider` trait (load_board, move_card, create_card, card_path) and `from_env()` factory that selects the backend from env vars.
-- **`provider_local.rs`** — Local filesystem provider. Delegates to `store_fs` for all I/O.
-- **`provider_jira.rs`** — Jira REST API provider using `reqwest` blocking client. Handles board config, transitions, and ADF description parsing.
-- **`store_fs.rs`** — Filesystem operations for the local board format (`board.txt`, `cols/<id>/order.txt`, `cols/<id>/<CARD>.md`).
-- **`app.rs`** — UI state machine (`App`) with `Action` enum. Handles cursor movement, optimistic card moves, detail toggle. All navigation logic is tested here.
-- **`main.rs`** — TUI event loop and rendering. Wires provider, app state, key events, and async move workers together. Card moves run on background threads with an optimistic queue.
+- **`flow-core`** (library) — Core logic shared by TUI and CLI:
+  - `model.rs` — Data types: `Board`, `Column`, `Card`, `Priority`.
+  - `provider.rs` — `Provider` trait and `from_env()` factory.
+  - `provider_local.rs` — Local filesystem provider, delegates to `store_fs`.
+  - `provider_jira.rs` — Jira REST API provider.
+  - `store_fs.rs` — Filesystem I/O for boards and cards.
+  - `format.rs` — Output formatters (plain, json, xml, csv, table, markdown).
+
+- **`flow-tui`** (library) — TUI-specific components:
+  - `app.rs` — App state machine, `Action` enum, `EditState`.
+  - `ui.rs` — Ratatui rendering and key handling.
+
+- **`flow`** (binary) — TUI launcher. Depends on `flow-core` + `flow-tui`.
+
+- **`flow-cli`** (binary) — CLI commands. Depends on `flow-core` with `cli` feature.
+
+### Version
+
+Defined once in root `Cargo.toml` under `[workspace.package]`. All crates inherit via `version.workspace = true`.
 
 ## Key patterns
 
@@ -44,16 +59,16 @@ Single-crate Rust project (edition 2024). All source is in `src/`.
 This project uses `flow` itself as its Kanban task board. The project board lives in `./.board` (gitignored).
 
 ```bash
-FLOW_BOARD_PATH=./.board flow list             # list all cards
-FLOW_BOARD_PATH=./.board flow columns          # list columns
-FLOW_BOARD_PATH=./.board flow show <card_id>   # show card details
-FLOW_BOARD_PATH=./.board flow create <col> "title" --priority high
-FLOW_BOARD_PATH=./.board flow move <card_id> <col>
-FLOW_BOARD_PATH=./.board flow edit <card_id> --title "new title"
-FLOW_BOARD_PATH=./.board flow delete <card_id>
+FLOW_BOARD_PATH=./.board flow-cli list             # list all cards
+FLOW_BOARD_PATH=./.board flow-cli columns          # list columns
+FLOW_BOARD_PATH=./.board flow-cli show <card_id>   # show card details
+FLOW_BOARD_PATH=./.board flow-cli create <col> "title" --priority high
+FLOW_BOARD_PATH=./.board flow-cli move <card_id> <col>
+FLOW_BOARD_PATH=./.board flow-cli edit <card_id> --title "new title"
+FLOW_BOARD_PATH=./.board flow-cli delete <card_id>
 ```
 
-Use `flow` directly (not `cargo run --`) when the binary is installed. Use this board to track tasks, bugs, and features for the project.
+Use `flow-cli` for board management and `flow` to launch the TUI. Use this board to track tasks, bugs, and features for the project.
 
 ## Commit style
 

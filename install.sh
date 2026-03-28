@@ -1,18 +1,18 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-BINARY_NAME="flow"
 INSTALL_DIR="$HOME/.local/bin"
 
-echo "Building $BINARY_NAME in release mode..."
-cargo build --release
+echo "Building flow workspace in release mode..."
+cargo build --workspace --release
 
 mkdir -p "$INSTALL_DIR"
-cp "target/release/$BINARY_NAME" "$INSTALL_DIR/$BINARY_NAME"
+cp "target/release/flow" "$INSTALL_DIR/flow"
+cp "target/release/flow-cli" "$INSTALL_DIR/flow-cli"
 
 BOARD_DIR="$HOME/.config/flow/boards/default"
 mkdir -p "$BOARD_DIR"
 cp -r boards/demo/* "$BOARD_DIR/"
 
-echo "Installed $BINARY_NAME to $INSTALL_DIR/$BINARY_NAME"
+echo "Installed flow and flow-cli to $INSTALL_DIR"
 echo "Default board copied to $BOARD_DIR"

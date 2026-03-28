@@ -1,0 +1,16 @@
+[package]
+name = "flow"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "A terminal Kanban board (TUI)."
+
+[[bin]]
+name = "flow"
+path = "src/main.rs"
+
+[dependencies]
+flow-core = { workspace = true }
+flow-tui = { workspace = true }
+crossterm = { workspace = true }
+ratatui = { workspace = true }

@@ -1,0 +1,11 @@
+[package]
+name = "flow-tui"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "TUI components for flow: app state, rendering, and key bindings."
+
+[dependencies]
+flow-core = { workspace = true }
+crossterm = { workspace = true }
+ratatui = { workspace = true }

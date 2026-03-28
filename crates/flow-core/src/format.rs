@@ -1,9 +1,9 @@
-use clap::ValueEnum;
 use serde::Serialize;
 
 use crate::model::{Board, Card};
 
-#[derive(Clone, Copy, ValueEnum)]
+#[derive(Clone, Copy)]
+#[cfg_attr(feature = "cli", derive(clap::ValueEnum))]
 pub enum Format {
     Plain,
     Json,

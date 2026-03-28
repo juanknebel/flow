@@ -2,20 +2,19 @@ use std::io;
 
 use clap::{Parser, Subcommand};
 
-use crate::format::{self, Format};
-use crate::model::Priority;
-use crate::provider;
-use crate::store_fs;
+use flow_core::format::{self, Format};
+use flow_core::model::Priority;
+use flow_core::provider;
+use flow_core::store_fs;
 
 #[derive(Parser)]
 #[command(
-    name = "flow",
-    about = "A terminal Kanban board with CLI and TUI modes.",
+    name = "flow-cli",
+    about = "CLI for the flow Kanban board.",
     long_about = "\
-A terminal Kanban board with CLI and TUI modes.
+CLI for the flow Kanban board.
 
-Without a subcommand, launches the interactive TUI (terminal UI).
-With a subcommand, performs the action and prints the result to stdout.
+Each subcommand performs an action and prints the result to stdout.
 
 BOARD MODEL:
   A board has ordered columns. Each column has an id, a title, and cards.
@@ -45,16 +44,16 @@ PROVIDERS:
   Without FLOW_PROVIDER, a built-in demo board is used.
 
 EXAMPLES:
-  flow list -f json
-  flow columns -f csv
-  flow show FLOW-1
-  flow create todo \"Fix login bug\" --body \"Users report 500 on /login\" --priority high
-  flow edit FLOW-1 --title \"Updated title\" --priority bug
-  flow move FLOW-1 done"
+  flow-cli list -f json
+  flow-cli columns -f csv
+  flow-cli show FLOW-1
+  flow-cli create todo \"Fix login bug\" --body \"Users report 500 on /login\" --priority high
+  flow-cli edit FLOW-1 --title \"Updated title\" --priority bug
+  flow-cli move FLOW-1 done"
 )]
 pub struct Cli {
     #[command(subcommand)]
-    pub command: Option<Command>,
+    pub command: Command,
 
     /// Output format: plain, json, xml, csv, table, markdown
     #[arg(long, short = 'f', default_value = "plain", global = true)]
@@ -252,9 +251,9 @@ pub fn run(cmd: Command, fmt: Format) -> io::Result<()> {
 }
 
 fn find_card<'a>(
-    board: &'a crate::model::Board,
+    board: &'a flow_core::model::Board,
     card_id: &str,
-) -> io::Result<(&'a crate::model::Column, &'a crate::model::Card)> {
+) -> io::Result<(&'a flow_core::model::Column, &'a flow_core::model::Card)> {
     for col in &board.columns {
         if let Some(card) = col.cards.iter().find(|c| c.id == card_id) {
             return Ok((col, card));

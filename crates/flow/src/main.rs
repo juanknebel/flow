@@ -16,22 +16,10 @@ use ratatui::{
     backend::CrosstermBackend,
 };
 
-use clap::Parser;
-use flow::{
-    App, Action, Board,
-    app::{EditState, EditFocus},
-    cli, provider,
-    model::Priority,
-    ui::{render, action_from_key}
-};
+use flow_core::{Board, provider, model::Priority};
+use flow_tui::{App, Action, EditState, EditFocus, ui::{render, action_from_key}};
 
 fn main() -> io::Result<()> {
-    let args = cli::Cli::parse();
-
-    if let Some(cmd) = args.command {
-        return cli::run(cmd, args.format);
-    }
-
     enable_raw_mode()?;
     let mut stdout = io::stdout();
     execute!(stdout, EnterAlternateScreen)?;
@@ -87,7 +75,7 @@ fn run_tui(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> io::Result<
                     app.banner = Some(
                         "Move failed: reloaded board (optimistic state corrected)".to_string(),
                     );
-                    move_queue.clear(); // Drop queued moves after a failure to avoid compounding errors.
+                    move_queue.clear();
                     move_rx = None;
                     update_quit_banner(&mut app, quitting, &move_queue, move_rx.is_some());
                 }
@@ -387,7 +375,7 @@ fn spawn_move(card_id: String, dst: String) -> Receiver<Result<Option<Board>, St
     let (tx, rx) = mpsc::channel::<Result<Option<Board>, String>>();
     thread::spawn(move || {
         let res = panic::catch_unwind(|| {
-            let mut p = provider::from_env();
+            let mut p = flow_core::provider::from_env();
             match p.move_card(&card_id, &dst) {
                 Ok(()) => {
                     let _ = tx.send(Ok(None));

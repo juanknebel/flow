@@ -1,25 +1,24 @@
-[package]
-name = "flow"
+[workspace]
+resolver = "3"
+members = [
+    "crates/flow-core",
+    "crates/flow-tui",
+    "crates/flow",
+    "crates/flow-cli",
+]
+
+[workspace.package]
 version = "0.1.0"
 edition = "2024"
-description = "A terminal Kanban board with CLI and TUI modes."
 license = "MIT"
-repository = "https://github.com/example/flow"
-keywords = ["kanban", "tui", "cli", "project-management", "ratatui"]
-categories = ["command-line-utilities", "visualization"]
+repository = "https://github.com/juanknebel/flow"
 
-[lib]
-name = "flow"
-path = "src/lib.rs"
-
-[[bin]]
-name = "flow"
-path = "src/main.rs"
-
-[dependencies]
-clap = { version = "4", features = ["derive"] }
+[workspace.dependencies]
+flow-core = { path = "crates/flow-core" }
+flow-tui  = { path = "crates/flow-tui" }
+clap      = { version = "4", features = ["derive"] }
 crossterm = "0.29.0"
-ratatui = "0.30.0"
-reqwest = { version = "0.13.1", default-features = false, features = ["blocking", "json", "rustls"] }
-serde = { version = "1.0.228", features = ["derive"] }
+ratatui   = "0.30.0"
+reqwest   = { version = "0.13.1", default-features = false, features = ["blocking", "json", "rustls"] }
+serde     = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.149"
