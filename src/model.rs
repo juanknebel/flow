@@ -75,6 +75,7 @@ pub struct Card {
     pub title: String,
     pub description: String,
     pub priority: Priority,
+    pub assignee: String,
 }
 
 pub struct Column {

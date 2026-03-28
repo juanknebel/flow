@@ -48,25 +48,30 @@ fn load_cards(root: &Path, col_id: &str) -> io::Result<Vec<Card>> {
 
     for id in order.lines().map(str::trim).filter(|l| !l.is_empty()) {
         let raw = fs::read_to_string(dir.join(format!("{id}.md")))?;
-        let (title, desc, priority) = parse_md(&raw, id);
+        let (title, desc, priority, assignee) = parse_md(&raw, id);
         cards.push(Card {
             id: id.to_string(),
             title,
             description: desc,
             priority,
+            assignee,
         });
     }
 
     Ok(cards)
 }
 
-pub fn read_card_content(path: &Path) -> io::Result<(String, String, Priority)> {
+pub fn read_card_content(path: &Path) -> io::Result<(String, String, Priority, String)> {
     let raw = fs::read_to_string(path)?;
     Ok(parse_md(&raw, ""))
 }
 
-pub fn write_card_content(path: &Path, title: &str, body: &str, priority: Priority) -> io::Result<()> {
-    let mut content = format!("---\npriority: {}\n---\n# {title}\n", priority.label());
+pub fn write_card_content(path: &Path, title: &str, body: &str, priority: Priority, assignee: &str) -> io::Result<()> {
+    let mut content = format!("---\npriority: {}\n", priority.label());
+    if !assignee.is_empty() {
+        content.push_str(&format!("assignee: {assignee}\n"));
+    }
+    content.push_str(&format!("---\n# {title}\n"));
     if !body.is_empty() {
         content.push('\n');
         content.push_str(body);
@@ -77,8 +82,9 @@ pub fn write_card_content(path: &Path, title: &str, body: &str, priority: Priori
     fs::write(path, content)
 }
 
-fn parse_md(raw: &str, fallback: &str) -> (String, String, Priority) {
+fn parse_md(raw: &str, fallback: &str) -> (String, String, Priority, String) {
     let mut priority = Priority::Medium;
+    let mut assignee = String::new();
     let content;
 
     // Check for frontmatter
@@ -91,6 +97,8 @@ fn parse_md(raw: &str, fallback: &str) -> (String, String, Priority) {
                 let line = line.trim();
                 if let Some(val) = line.strip_prefix("priority:") {
                     priority = Priority::from_str(val);
+                } else if let Some(val) = line.strip_prefix("assignee:") {
+                    assignee = val.trim().to_string();
                 }
             }
             // Content starts after closing --- and its newline
@@ -121,7 +129,7 @@ fn parse_md(raw: &str, fallback: &str) -> (String, String, Priority) {
     let title = if title.is_empty() { fallback } else { title };
 
     let rest = content[first.len()..].trim().to_string();
-    (title.to_string(), rest, priority)
+    (title.to_string(), rest, priority, assignee)
 }
 
 pub fn move_card(root: &Path, card_id: &str, to_col_id: &str) -> io::Result<()> {
@@ -153,7 +161,7 @@ pub fn create_card(root: &Path, to_col_id: &str) -> io::Result<String> {
     let dir = root.join("cols").join(to_col_id);
     fs::create_dir_all(&dir)?;
     let path = dir.join(format!("{id}.md"));
-    write_card_content(&path, "New card", "", Priority::Medium)?;
+    write_card_content(&path, "New card", "", Priority::Medium, "")?;
     order_append(&dir.join("order.txt"), &id)?;
     Ok(id)
 }
@@ -339,12 +347,13 @@ mod tests {
         fs::create_dir_all(&root).unwrap();
         let path = root.join("CARD.md");
 
-        write_card_content(&path, "My Title", "Body text", Priority::High).unwrap();
+        write_card_content(&path, "My Title", "Body text", Priority::High, "user@test.com").unwrap();
 
-        let (title, body, priority) = read_card_content(&path).unwrap();
+        let (title, body, priority, assignee) = read_card_content(&path).unwrap();
         assert_eq!(title, "My Title");
         assert_eq!(body, "Body text");
         assert_eq!(priority, Priority::High);
+        assert_eq!(assignee, "user@test.com");
 
         fs::remove_dir_all(root).unwrap();
     }
@@ -355,12 +364,13 @@ mod tests {
         fs::create_dir_all(&root).unwrap();
         let path = root.join("CARD.md");
 
-        write_card_content(&path, "Title Only", "", Priority::Low).unwrap();
+        write_card_content(&path, "Title Only", "", Priority::Low, "").unwrap();
 
-        let (title, body, priority) = read_card_content(&path).unwrap();
+        let (title, body, priority, assignee) = read_card_content(&path).unwrap();
         assert_eq!(title, "Title Only");
         assert!(body.is_empty());
         assert_eq!(priority, Priority::Low);
+        assert!(assignee.is_empty());
 
         fs::remove_dir_all(root).unwrap();
     }
@@ -371,9 +381,9 @@ mod tests {
         fs::create_dir_all(&root).unwrap();
         let path = root.join("CARD.md");
 
-        write_card_content(&path, "Title", "Line 1\nLine 2\nLine 3", Priority::Bug).unwrap();
+        write_card_content(&path, "Title", "Line 1\nLine 2\nLine 3", Priority::Bug, "").unwrap();
 
-        let (title, body, priority) = read_card_content(&path).unwrap();
+        let (title, body, priority, _) = read_card_content(&path).unwrap();
         assert_eq!(title, "Title");
         assert!(body.contains("Line 1"));
         assert!(body.contains("Line 3"));
@@ -384,19 +394,21 @@ mod tests {
 
     #[test]
     fn parse_md_without_frontmatter_defaults_to_medium() {
-        let (title, body, priority) = parse_md("# Hello\n\nWorld", "fallback");
+        let (title, body, priority, assignee) = parse_md("# Hello\n\nWorld", "fallback");
         assert_eq!(title, "Hello");
         assert_eq!(body, "World");
         assert_eq!(priority, Priority::Medium);
+        assert!(assignee.is_empty());
     }
 
     #[test]
     fn parse_md_with_frontmatter() {
-        let raw = "---\npriority: HIGH\n---\n# My Card\n\nDescription";
-        let (title, body, priority) = parse_md(raw, "fallback");
+        let raw = "---\npriority: HIGH\nassignee: dev@test.com\n---\n# My Card\n\nDescription";
+        let (title, body, priority, assignee) = parse_md(raw, "fallback");
         assert_eq!(title, "My Card");
         assert_eq!(body, "Description");
         assert_eq!(priority, Priority::High);
+        assert_eq!(assignee, "dev@test.com");
     }
 
     #[test]
@@ -409,11 +421,11 @@ mod tests {
             "col todo \"TO DO\"\n",
         );
         write(&root.join("cols/todo/order.txt"), "A\nB\nC\nD\nE\n");
-        write_card_content(&root.join("cols/todo/A.md"), "Zebra", "", Priority::Low).unwrap();
-        write_card_content(&root.join("cols/todo/B.md"), "Alpha", "", Priority::High).unwrap();
-        write_card_content(&root.join("cols/todo/C.md"), "Beta", "", Priority::High).unwrap();
-        write_card_content(&root.join("cols/todo/D.md"), "Crash", "", Priority::Bug).unwrap();
-        write_card_content(&root.join("cols/todo/E.md"), "Nice to have", "", Priority::Wishlist).unwrap();
+        write_card_content(&root.join("cols/todo/A.md"), "Zebra", "", Priority::Low, "").unwrap();
+        write_card_content(&root.join("cols/todo/B.md"), "Alpha", "", Priority::High, "").unwrap();
+        write_card_content(&root.join("cols/todo/C.md"), "Beta", "", Priority::High, "").unwrap();
+        write_card_content(&root.join("cols/todo/D.md"), "Crash", "", Priority::Bug, "").unwrap();
+        write_card_content(&root.join("cols/todo/E.md"), "Nice to have", "", Priority::Wishlist, "").unwrap();
 
         let b = load_board(&root).unwrap();
         let titles: Vec<&str> = b.columns[0].cards.iter().map(|c| c.title.as_str()).collect();
@@ -429,8 +441,8 @@ mod tests {
         let path = root.join("CARD.md");
 
         for p in [Priority::Low, Priority::Medium, Priority::High, Priority::Bug, Priority::Wishlist] {
-            write_card_content(&path, "Test", "Body", p).unwrap();
-            let (_, _, got) = read_card_content(&path).unwrap();
+            write_card_content(&path, "Test", "Body", p, "").unwrap();
+            let (_, _, got, _) = read_card_content(&path).unwrap();
             assert_eq!(got, p, "roundtrip failed for {:?}", p);
         }
 

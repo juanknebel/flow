@@ -148,6 +148,7 @@ struct CardDetailOut {
     title: String,
     description: String,
     priority: String,
+    assignee: String,
     column_id: String,
     column_title: String,
 }
@@ -156,6 +157,9 @@ pub fn format_card(card: &Card, col_id: &str, col_title: &str, fmt: Format) -> S
     match fmt {
         Format::Plain => {
             let mut out = format!("{}\n{}\npriority: {}\ncolumn: {} ({})\n", card.id, card.title, card.priority.label(), col_title, col_id);
+            if !card.assignee.is_empty() {
+                out.push_str(&format!("assignee: {}\n", card.assignee));
+            }
             if !card.description.trim().is_empty() {
                 out.push('\n');
                 out.push_str(&card.description);
@@ -167,6 +171,7 @@ pub fn format_card(card: &Card, col_id: &str, col_title: &str, fmt: Format) -> S
             title: card.title.clone(),
             description: card.description.clone(),
             priority: card.priority.label().to_string(),
+            assignee: card.assignee.clone(),
             column_id: col_id.to_string(),
             column_title: col_title.to_string(),
         })
@@ -190,13 +195,14 @@ pub fn format_card(card: &Card, col_id: &str, col_title: &str, fmt: Format) -> S
             out
         }
         Format::Csv => {
-            let mut out = String::from("id,title,description,priority,column_id,column_title\n");
+            let mut out = String::from("id,title,description,priority,assignee,column_id,column_title\n");
             out.push_str(&format!(
-                "{},{},{},{},{},{}",
+                "{},{},{},{},{},{},{}",
                 csv_esc(&card.id),
                 csv_esc(&card.title),
                 csv_esc(&card.description),
                 csv_esc(card.priority.label()),
+                csv_esc(&card.assignee),
                 csv_esc(col_id),
                 csv_esc(col_title),
             ));
@@ -204,17 +210,23 @@ pub fn format_card(card: &Card, col_id: &str, col_title: &str, fmt: Format) -> S
         }
         Format::Table => {
             let headers = ["FIELD", "VALUE"];
-            let rows = vec![
+            let mut rows = vec![
                 vec!["id".to_string(), card.id.clone()],
                 vec!["title".to_string(), card.title.clone()],
                 vec!["priority".to_string(), card.priority.label().to_string()],
                 vec!["column".to_string(), format!("{col_title} ({col_id})")],
-                vec!["description".to_string(), card.description.clone()],
             ];
+            if !card.assignee.is_empty() {
+                rows.push(vec!["assignee".to_string(), card.assignee.clone()]);
+            }
+            rows.push(vec!["description".to_string(), card.description.clone()]);
             format_table(&headers, &rows)
         }
         Format::Markdown => {
             let mut out = format!("# {}\n**{}** | Priority: {}\n\nColumn: {} (`{}`)\n", card.title, card.id, card.priority.label(), col_title, col_id);
+            if !card.assignee.is_empty() {
+                out.push_str(&format!("Assignee: {}\n", card.assignee));
+            }
             if !card.description.trim().is_empty() {
                 out.push_str(&format!("\n---\n\n{}\n", card.description));
             }
@@ -442,6 +454,7 @@ mod tests {
                         title: "First task".into(),
                         description: "Details here".into(),
                         priority: Priority::Medium,
+                        assignee: String::new(),
                     }],
                 },
                 Column {
@@ -521,6 +534,7 @@ mod tests {
             title: "My task".into(),
             description: "Some details".into(),
             priority: Priority::High,
+            assignee: String::new(),
         }
     }
 
@@ -541,6 +555,7 @@ mod tests {
             title: "No desc".into(),
             description: "  ".into(),
             priority: Priority::Low,
+            assignee: String::new(),
         };
         let out = format_card(&card, "done", "Done", Format::Plain);
         assert!(!out.contains("  \n"));
@@ -572,7 +587,7 @@ mod tests {
     fn card_csv_has_header_and_row() {
         let out = format_card(&sample_card(), "todo", "To Do", Format::Csv);
         let lines: Vec<&str> = out.lines().collect();
-        assert_eq!(lines[0], "id,title,description,priority,column_id,column_title");
+        assert_eq!(lines[0], "id,title,description,priority,assignee,column_id,column_title");
         assert!(lines[1].contains("X-1"));
         assert!(lines[1].contains("HIGH"));
     }

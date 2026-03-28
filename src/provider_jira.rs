@@ -195,6 +195,7 @@ impl Provider for JiraProvider {
                     "summary".to_string(),
                     "description".to_string(),
                     "status".to_string(),
+                    "assignee".to_string(),
                 ],
                 max_results: 200,
             })
@@ -228,11 +229,20 @@ impl Provider for JiraProvider {
 
             let desc = jira_description_text(issue.fields.description.as_ref());
 
+            let assignee = issue
+                .fields
+                .assignee
+                .as_ref()
+                .and_then(|a| a.get("displayName").and_then(|v| v.as_str()))
+                .unwrap_or("")
+                .to_string();
+
             columns.get_mut(&column_name).unwrap().push(Card {
                 id: issue.key,
                 title: issue.fields.summary,
                 description: desc,
                 priority: Priority::Medium,
+                assignee,
             });
         }
 
@@ -337,6 +347,7 @@ struct IssueFields {
     summary: String,
     description: Option<serde_json::Value>,
     status: Status,
+    assignee: Option<serde_json::Value>,
 }
 
 #[derive(Deserialize)]

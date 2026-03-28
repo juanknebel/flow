@@ -123,6 +123,12 @@ pub fn render(f: &mut Frame, app: &App, render_area: Option<Rect>) {
             Span::raw("Priority: "),
             Span::styled(card.priority.label(), Style::default().fg(priority_color(card.priority))),
         ]));
+        if !card.assignee.is_empty() {
+            lines.push(Line::from(vec![
+                Span::raw("Assignee: "),
+                Span::styled(&card.assignee, Style::default().add_modifier(Modifier::BOLD)),
+            ]));
+        }
         lines.push(Line::from(""));
         lines.push(Line::from(card.title.clone()));
         lines.push(Line::from(""));
@@ -200,6 +206,7 @@ pub fn render(f: &mut Frame, app: &App, render_area: Option<Rect>) {
                 Constraint::Length(1),
                 Constraint::Length(3),
                 Constraint::Length(3),
+                Constraint::Length(3),
                 Constraint::Min(1),
                 Constraint::Length(1),
             ])
@@ -248,25 +255,37 @@ pub fn render(f: &mut Frame, app: &App, render_area: Option<Rect>) {
             chunks[2],
         );
 
+        // Assignee field
+        let assignee_style = if edit.focus == EditFocus::Assignee {
+            Style::default().fg(Color::Cyan)
+        } else {
+            Style::default()
+        };
+        f.render_widget(
+            Paragraph::new(edit.assignee.clone())
+                .block(Block::default().title("Assignee").borders(Borders::ALL).border_style(assignee_style)),
+            chunks[3],
+        );
+
         let desc_style = if edit.focus == EditFocus::Description {
             Style::default().fg(Color::Cyan)
         } else {
             Style::default()
         };
-        let inner_width = chunks[3].width.saturating_sub(2) as usize;
+        let inner_width = chunks[4].width.saturating_sub(2) as usize;
         let wrapped_desc = wrap_text(&edit.description, inner_width);
 
         f.render_widget(
             Paragraph::new(wrapped_desc.join("\n"))
                 .block(Block::default().title("Description").borders(Borders::ALL).border_style(desc_style)),
-            chunks[3],
+            chunks[4],
         );
 
         f.render_widget(
             Paragraph::new("Tab: switch field  \u{2190}/\u{2192}: priority  Enter: save  Esc: cancel")
                 .style(Style::default().fg(Color::DarkGray))
                 .alignment(ratatui::layout::Alignment::Center),
-            chunks[4],
+            chunks[5],
         );
 
         // Position cursor
@@ -277,11 +296,17 @@ pub fn render(f: &mut Frame, app: &App, render_area: Option<Rect>) {
                     chunks[1].y + 1,
                 ));
             }
+            EditFocus::Assignee => {
+                f.set_cursor_position((
+                    chunks[3].x + 1 + edit.cursor_pos as u16,
+                    chunks[3].y + 1,
+                ));
+            }
             EditFocus::Description => {
                 let (x, y) = calculate_visual_cursor_pos(&edit.description, edit.cursor_pos, inner_width);
                 f.set_cursor_position((
-                    chunks[3].x + 1 + x as u16,
-                    chunks[3].y + 1 + y as u16,
+                    chunks[4].x + 1 + x as u16,
+                    chunks[4].y + 1 + y as u16,
                 ));
             }
             EditFocus::Priority => {

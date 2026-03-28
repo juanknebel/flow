@@ -92,6 +92,9 @@ pub enum Command {
         /// Card priority: low, medium, high, bug, wishlist (default: medium)
         #[arg(long)]
         priority: Option<String>,
+        /// Assignee (email or user id)
+        #[arg(long)]
+        assignee: Option<String>,
     },
 
     /// Update a card's title, body, and/or priority
@@ -107,6 +110,9 @@ pub enum Command {
         /// New priority: low, medium, high, bug, wishlist (keeps current if omitted)
         #[arg(long)]
         priority: Option<String>,
+        /// New assignee (email or user id, keeps current if omitted)
+        #[arg(long)]
+        assignee: Option<String>,
     },
 
     /// Delete a card permanently
@@ -162,19 +168,21 @@ pub fn run(cmd: Command, fmt: Format) -> io::Result<()> {
             title,
             body,
             priority,
+            assignee,
         } => {
             let card_id = prov
                 .create_card(&column_id)
                 .map_err(|e| io::Error::other(e.to_string()))?;
 
-            if title.is_some() || body.is_some() || priority.is_some() {
+            if title.is_some() || body.is_some() || priority.is_some() || assignee.is_some() {
                 let path = prov
                     .card_path(&card_id)
                     .map_err(|e| io::Error::other(e.to_string()))?;
                 let t = title.as_deref().unwrap_or("New card");
                 let b = body.as_deref().unwrap_or("");
                 let p = priority.as_deref().map(Priority::from_str).unwrap_or(Priority::Medium);
-                store_fs::write_card_content(&path, t, b, p)?;
+                let a = assignee.as_deref().unwrap_or("");
+                store_fs::write_card_content(&path, t, b, p, a)?;
             }
 
             println!(
@@ -194,10 +202,11 @@ pub fn run(cmd: Command, fmt: Format) -> io::Result<()> {
             title,
             body,
             priority,
+            assignee,
         } => {
-            if title.is_none() && body.is_none() && priority.is_none() {
+            if title.is_none() && body.is_none() && priority.is_none() && assignee.is_none() {
                 return Err(io::Error::other(
-                    "edit requires at least --title, --body, or --priority",
+                    "edit requires at least --title, --body, --priority, or --assignee",
                 ));
             }
 
@@ -205,11 +214,12 @@ pub fn run(cmd: Command, fmt: Format) -> io::Result<()> {
                 .card_path(&card_id)
                 .map_err(|e| io::Error::other(e.to_string()))?;
 
-            let (cur_title, cur_body, cur_priority) = store_fs::read_card_content(&path)?;
+            let (cur_title, cur_body, cur_priority, cur_assignee) = store_fs::read_card_content(&path)?;
             let t = title.as_deref().unwrap_or(&cur_title);
             let b = body.as_deref().unwrap_or(&cur_body);
             let p = priority.as_deref().map(Priority::from_str).unwrap_or(cur_priority);
-            store_fs::write_card_content(&path, t, b, p)?;
+            let a = assignee.as_deref().unwrap_or(&cur_assignee);
+            store_fs::write_card_content(&path, t, b, p, a)?;
 
             println!(
                 "{}",

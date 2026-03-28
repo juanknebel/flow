@@ -18,6 +18,7 @@ Opening a browser just to move an issue is slow and breaks focus.
 - **Multiple Providers**: Local filesystem (Markdown-based) and Jira Cloud support.
 - **Keyboard-first**: One-keystroke transitions (`H` / `L`), `hjkl` and arrow-key navigation.
 - **Card Priority**: Color-coded priority levels (Low, Medium, High, Bug, Wishlist) visible on the board and editable in the popup. Cards are automatically sorted by priority (Bug → High → Medium → Low → Wishlist), then alphabetically by title.
+- **Card Assignee**: Assign cards to team members (email or user id) via CLI (`--assignee`) or the TUI edit popup. Stored in card frontmatter.
 - **Integrated Editing**: Create/edit cards directly in an integrated popup with full cursor support, word wrapping, and familiar shortcuts.
 - **Clean Visuals**: Terminal-native design powered by `ratatui` with responsive layouts.
 

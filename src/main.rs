@@ -141,7 +141,8 @@ fn run_tui(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> io::Result<
                                 let title = edit.title.clone();
                                 let description = edit.description.clone();
                                 let priority = edit.priority;
-                                if let Err(e) = provider.update_card(&card_id, &title, &description, priority) {
+                                let assignee = edit.assignee.clone();
+                                if let Err(e) = provider.update_card(&card_id, &title, &description, priority, &assignee) {
                                     app.banner = Some(format!("Save failed: {e}"));
                                 } else {
                                     match provider.load_board() {
@@ -237,6 +238,7 @@ fn run_tui(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> io::Result<
                                             title: "New card".to_string(),
                                             description: "".to_string(),
                                             priority: Priority::Medium,
+                                            assignee: String::new(),
                                             cursor_pos: 8,
                                             focus: EditFocus::Title,
                                         });
@@ -265,6 +267,7 @@ fn run_tui(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> io::Result<
                                     title: card.title.clone(),
                                     description: card.description.clone(),
                                     priority: card.priority,
+                                    assignee: card.assignee.clone(),
                                     cursor_pos: card.title.len(),
                                     focus: EditFocus::Title,
                                 });

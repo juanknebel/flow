@@ -22,13 +22,15 @@ pub enum EditFocus {
     Title,
     Description,
     Priority,
+    Assignee,
 }
 
 impl EditFocus {
     pub fn next(self) -> Self {
         match self {
             EditFocus::Title => EditFocus::Priority,
-            EditFocus::Priority => EditFocus::Description,
+            EditFocus::Priority => EditFocus::Assignee,
+            EditFocus::Assignee => EditFocus::Description,
             EditFocus::Description => EditFocus::Title,
         }
     }
@@ -39,6 +41,7 @@ pub struct EditState {
     pub title: String,
     pub description: String,
     pub priority: Priority,
+    pub assignee: String,
     pub cursor_pos: usize,
     pub focus: EditFocus,
 }
@@ -48,6 +51,7 @@ impl EditState {
         match self.focus {
             EditFocus::Title => &self.title,
             EditFocus::Description => &self.description,
+            EditFocus::Assignee => &self.assignee,
             EditFocus::Priority => "",
         }
     }
@@ -56,12 +60,13 @@ impl EditState {
         match self.focus {
             EditFocus::Title => &mut self.title,
             EditFocus::Description => &mut self.description,
+            EditFocus::Assignee => &mut self.assignee,
             EditFocus::Priority => &mut self.title, // unused for priority, but must return something
         }
     }
 
     pub fn insert_char(&mut self, c: char) {
-        if self.focus == EditFocus::Priority {
+        if matches!(self.focus, EditFocus::Priority) {
             return;
         }
         let pos = self.cursor_pos;
@@ -75,7 +80,7 @@ impl EditState {
     }
 
     pub fn delete_prev(&mut self) {
-        if self.focus == EditFocus::Priority {
+        if matches!(self.focus, EditFocus::Priority) {
             return;
         }
         if self.cursor_pos > 0 {
@@ -89,7 +94,7 @@ impl EditState {
     }
 
     pub fn delete_curr(&mut self) {
-        if self.focus == EditFocus::Priority {
+        if matches!(self.focus, EditFocus::Priority) {
             return;
         }
         let pos = self.cursor_pos;
@@ -100,7 +105,7 @@ impl EditState {
     }
 
     pub fn move_cursor_left(&mut self) {
-        if self.focus == EditFocus::Priority {
+        if matches!(self.focus, EditFocus::Priority) {
             self.priority = self.priority.prev();
             return;
         }
@@ -317,6 +322,7 @@ mod tests {
             title: title.into(),
             description: "d".into(),
             priority: Priority::Medium,
+            assignee: String::new(),
         }
     }
 
@@ -439,7 +445,8 @@ mod tests {
     #[test]
     fn edit_focus_cycles() {
         assert_eq!(EditFocus::Title.next(), EditFocus::Priority);
-        assert_eq!(EditFocus::Priority.next(), EditFocus::Description);
+        assert_eq!(EditFocus::Priority.next(), EditFocus::Assignee);
+        assert_eq!(EditFocus::Assignee.next(), EditFocus::Description);
         assert_eq!(EditFocus::Description.next(), EditFocus::Title);
     }
 }

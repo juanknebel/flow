@@ -60,7 +60,7 @@ pub trait Provider {
         })
     }
 
-    fn update_card(&mut self, _card_id: &str, _title: &str, _description: &str, _priority: Priority) -> Result<(), ProviderError> {
+    fn update_card(&mut self, _card_id: &str, _title: &str, _description: &str, _priority: Priority, _assignee: &str) -> Result<(), ProviderError> {
         Err(ProviderError::Parse {
             msg: "update_card not supported by current provider".to_string(),
         })
