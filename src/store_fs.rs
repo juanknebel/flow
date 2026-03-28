@@ -19,7 +19,9 @@ pub fn load_board(root: &Path) -> io::Result<Board> {
         cols.push(Column { id, title, cards });
     }
 
-    Ok(Board { columns: cols })
+    let mut board = Board { columns: cols };
+    board.sort_cards();
+    Ok(board)
 }
 
 fn parse_col(rest: &str) -> io::Result<(String, String)> {
@@ -395,6 +397,29 @@ mod tests {
         assert_eq!(title, "My Card");
         assert_eq!(body, "Description");
         assert_eq!(priority, Priority::High);
+    }
+
+    #[test]
+    fn load_board_sorts_cards_by_priority_then_title() {
+        let root = tmp_root();
+        fs::create_dir_all(root.join("cols")).unwrap();
+
+        write(
+            &root.join("board.txt"),
+            "col todo \"TO DO\"\n",
+        );
+        write(&root.join("cols/todo/order.txt"), "A\nB\nC\nD\nE\n");
+        write_card_content(&root.join("cols/todo/A.md"), "Zebra", "", Priority::Low).unwrap();
+        write_card_content(&root.join("cols/todo/B.md"), "Alpha", "", Priority::High).unwrap();
+        write_card_content(&root.join("cols/todo/C.md"), "Beta", "", Priority::High).unwrap();
+        write_card_content(&root.join("cols/todo/D.md"), "Crash", "", Priority::Bug).unwrap();
+        write_card_content(&root.join("cols/todo/E.md"), "Nice to have", "", Priority::Wishlist).unwrap();
+
+        let b = load_board(&root).unwrap();
+        let titles: Vec<&str> = b.columns[0].cards.iter().map(|c| c.title.as_str()).collect();
+        assert_eq!(titles, vec!["Crash", "Alpha", "Beta", "Zebra", "Nice to have"]);
+
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

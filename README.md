@@ -17,7 +17,7 @@ Opening a browser just to move an issue is slow and breaks focus.
 - **Reusable Library**: Exported components, models, and UI logic for integration into other Rust TUI apps.
 - **Multiple Providers**: Local filesystem (Markdown-based) and Jira Cloud support.
 - **Keyboard-first**: One-keystroke transitions (`H` / `L`), `hjkl` and arrow-key navigation.
-- **Card Priority**: Color-coded priority levels (Low, Medium, High, Bug, Wishlist) visible on the board and editable in the popup.
+- **Card Priority**: Color-coded priority levels (Low, Medium, High, Bug, Wishlist) visible on the board and editable in the popup. Cards are automatically sorted by priority (Bug → High → Medium → Low → Wishlist), then alphabetically by title.
 - **Integrated Editing**: Create/edit cards directly in an integrated popup with full cursor support, word wrapping, and familiar shortcuts.
 - **Clean Visuals**: Terminal-native design powered by `ratatui` with responsive layouts.
 

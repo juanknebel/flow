@@ -57,6 +57,17 @@ impl Priority {
             Priority::Wishlist => Priority::Bug,
         }
     }
+
+    /// Sort key: lower value = higher priority.
+    pub fn sort_key(&self) -> u8 {
+        match self {
+            Priority::Bug => 0,
+            Priority::High => 1,
+            Priority::Medium => 2,
+            Priority::Low => 3,
+            Priority::Wishlist => 4,
+        }
+    }
 }
 
 pub struct Card {
@@ -74,4 +85,16 @@ pub struct Column {
 
 pub struct Board {
     pub columns: Vec<Column>,
+}
+
+impl Board {
+    /// Sort cards in every column by priority (descending) then title (ascending).
+    pub fn sort_cards(&mut self) {
+        for col in &mut self.columns {
+            col.cards.sort_by(|a, b| {
+                a.priority.sort_key().cmp(&b.priority.sort_key())
+                    .then_with(|| a.title.to_lowercase().cmp(&b.title.to_lowercase()))
+            });
+        }
+    }
 }

@@ -261,7 +261,9 @@ impl Provider for JiraProvider {
             });
         }
 
-        Ok(Board { columns: cols })
+        let mut board = Board { columns: cols };
+        board.sort_cards();
+        Ok(board)
     }
 
     fn move_card(&mut self, card_id: &str, to_col_id: &str) -> Result<(), ProviderError> {
