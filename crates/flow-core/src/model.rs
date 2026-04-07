@@ -1,4 +1,34 @@
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SortOrder {
+    /// Higher priority first (Bug → High → Medium → Low → Wishlist)
+    Asc,
+    /// Lower priority first (Wishlist → Low → Medium → High → Bug)
+    Desc,
+}
+
+impl SortOrder {
+    pub fn toggle(self) -> Self {
+        match self {
+            SortOrder::Asc => SortOrder::Desc,
+            SortOrder::Desc => SortOrder::Asc,
+        }
+    }
+
+    pub fn label(&self) -> &'static str {
+        match self {
+            SortOrder::Asc => "↑",
+            SortOrder::Desc => "↓",
+        }
+    }
+}
+
+impl Default for SortOrder {
+    fn default() -> Self {
+        SortOrder::Asc
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Priority {
     Low,
     Medium,
@@ -89,12 +119,20 @@ pub struct Board {
 }
 
 impl Board {
-    /// Sort cards in every column by priority (descending) then title (ascending).
+    /// Sort cards in every column by priority then title (ascending).
     pub fn sort_cards(&mut self) {
+        self.sort_cards_with(SortOrder::Asc);
+    }
+
+    /// Sort cards in every column by priority in the given order, then title (ascending).
+    pub fn sort_cards_with(&mut self, order: SortOrder) {
         for col in &mut self.columns {
             col.cards.sort_by(|a, b| {
-                a.priority.sort_key().cmp(&b.priority.sort_key())
-                    .then_with(|| a.title.to_lowercase().cmp(&b.title.to_lowercase()))
+                let prio_cmp = match order {
+                    SortOrder::Asc => a.priority.sort_key().cmp(&b.priority.sort_key()),
+                    SortOrder::Desc => b.priority.sort_key().cmp(&a.priority.sort_key()),
+                };
+                prio_cmp.then_with(|| a.title.to_lowercase().cmp(&b.title.to_lowercase()))
             });
         }
     }

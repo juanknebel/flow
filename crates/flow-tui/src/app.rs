@@ -1,4 +1,4 @@
-use flow_core::model::{Board, Priority};
+use flow_core::model::{Board, Priority, SortOrder};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Action {
@@ -15,6 +15,7 @@ pub enum Action {
     Delete,
     Add,
     Edit,
+    ToggleSort,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -141,6 +142,7 @@ pub struct App {
     pub confirm_delete: bool,
     pub edit_state: Option<EditState>,
     pub banner: Option<String>,
+    pub sort_order: SortOrder,
 }
 
 impl App {
@@ -153,6 +155,7 @@ impl App {
             confirm_delete: false,
             edit_state: None,
             banner: None,
+            sort_order: SortOrder::default(),
         }
     }
 
@@ -266,6 +269,10 @@ impl App {
                 if !self.board.columns.is_empty() && !self.board.columns[self.col].cards.is_empty() {
                     self.confirm_delete = true;
                 }
+            }
+            Action::ToggleSort => {
+                self.sort_order = self.sort_order.toggle();
+                self.board.sort_cards_with(self.sort_order);
             }
             Action::Refresh | Action::MoveLeft | Action::MoveRight | Action::Add | Action::Edit => {}
         }

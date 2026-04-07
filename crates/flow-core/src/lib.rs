@@ -5,5 +5,5 @@ pub mod provider_jira;
 pub mod provider_local;
 pub mod store_fs;
 
-pub use model::{Board, Card, Column, Priority};
+pub use model::{Board, Card, Column, Priority, SortOrder};
 pub use provider::{Provider, ProviderError};

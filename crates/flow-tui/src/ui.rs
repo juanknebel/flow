@@ -20,8 +20,11 @@ fn priority_color(p: Priority) -> Color {
     }
 }
 
-pub fn help_text() -> &'static str {
-    "h/l or ←/→ focus  j/k or ↑/↓ select  H/L move  a/n new  e edit  d delete  Enter detail  r refresh  Esc close/quit  q quit"
+pub fn help_text(app: &App) -> String {
+    format!(
+        "h/l or ←/→ focus  j/k or ↑/↓ select  H/L move  a/n new  e edit  d delete  Enter detail  r refresh  s sort({})  Esc close/quit  q quit",
+        app.sort_order.label()
+    )
 }
 
 pub fn action_from_key(code: KeyCode) -> Option<Action> {
@@ -43,6 +46,7 @@ pub fn action_from_key(code: KeyCode) -> Option<Action> {
         KeyCode::Char('d') => Action::Delete,
         KeyCode::Char('a') | KeyCode::Char('n') => Action::Add,
         KeyCode::Char('e') => Action::Edit,
+        KeyCode::Char('s') => Action::ToggleSort,
 
         _ => return None,
     })
@@ -99,7 +103,7 @@ pub fn render(f: &mut Frame, app: &App, render_area: Option<Rect>) {
     }
 
     f.render_widget(
-        Paragraph::new(help_text()).block(Block::default().borders(Borders::TOP)),
+        Paragraph::new(help_text(app)).block(Block::default().borders(Borders::TOP)),
         help,
     );
 

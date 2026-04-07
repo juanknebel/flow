@@ -17,7 +17,7 @@ use ratatui::{
 };
 
 use flow_core::{Board, provider, model::Priority};
-use flow_tui::{App, Action, EditState, EditFocus, ui::{render, action_from_key}};
+use flow_tui::{App, Action, EditState, EditFocus, ui::render, ui::action_from_key};
 
 fn main() -> io::Result<()> {
     enable_raw_mode()?;
@@ -69,7 +69,8 @@ fn run_tui(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> io::Result<
     loop {
         if let Some(rx) = move_rx.as_ref() {
             match rx.try_recv() {
-                Ok(Ok(Some(board))) => {
+                Ok(Ok(Some(mut board))) => {
+                    board.sort_cards_with(app.sort_order);
                     app.board = board;
                     app.clamp();
                     app.banner = Some(
@@ -134,7 +135,8 @@ fn run_tui(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> io::Result<
                                     app.banner = Some(format!("Save failed: {e}"));
                                 } else {
                                     match provider.load_board() {
-                                        Ok(b) => {
+                                        Ok(mut b) => {
+                                            b.sort_cards_with(app.sort_order);
                                             app.board = b;
                                             focus_card_by_id(&mut app, &card_id);
                                             app.banner = Some("Card saved".to_string());
@@ -182,7 +184,8 @@ fn run_tui(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> io::Result<
                                         app.banner = Some(format!("Delete failed: {e}"));
                                     } else {
                                         match provider.load_board() {
-                                            Ok(b) => {
+                                            Ok(mut b) => {
+                                                b.sort_cards_with(app.sort_order);
                                                 app.board = b;
                                                 app.clamp();
                                                 app.banner = Some(format!("Card {card_id} deleted"));
@@ -211,6 +214,9 @@ fn run_tui(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> io::Result<
                         }
 
                         match a {
+                            Action::ToggleSort => {
+                                app.apply(a);
+                            }
                             Action::Add => {
                                 if quitting {
                                     continue;
@@ -301,7 +307,8 @@ fn run_tui(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> io::Result<
                                     continue;
                                 }
                                 match provider.load_board() {
-                                    Ok(b) => {
+                                    Ok(mut b) => {
+                                        b.sort_cards_with(app.sort_order);
                                         app.board = b;
                                         app.focus_first_non_empty();
                                         app.banner = None;
