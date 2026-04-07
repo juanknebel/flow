@@ -7,7 +7,7 @@ use ratatui::{
 };
 use crossterm::event::KeyCode;
 
-use crate::app::{Action, App, EditFocus};
+use crate::app::{Action, App, EditFocus, SearchState};
 use flow_core::model::Priority;
 
 fn priority_color(p: Priority) -> Color {
@@ -22,7 +22,7 @@ fn priority_color(p: Priority) -> Color {
 
 pub fn help_text(app: &App) -> String {
     format!(
-        "h/l or ←/→ focus  j/k or ↑/↓ select  H/L move  a/n new  e edit  d delete  Enter detail  r refresh  s sort({})  Esc close/quit  q quit",
+        "h/l or ←/→ focus  j/k or ↑/↓ select  H/L move  a/n new  e edit  d delete  Enter detail  r refresh  s sort({})  / search  Esc close/quit  q quit",
         app.sort_order.label()
     )
 }
@@ -47,6 +47,7 @@ pub fn action_from_key(code: KeyCode) -> Option<Action> {
         KeyCode::Char('a') | KeyCode::Char('n') => Action::Add,
         KeyCode::Char('e') => Action::Edit,
         KeyCode::Char('s') => Action::ToggleSort,
+        KeyCode::Char('/') => Action::Search,
 
         _ => return None,
     })
@@ -102,10 +103,32 @@ pub fn render(f: &mut Frame, app: &App, render_area: Option<Rect>) {
         }
     }
 
-    f.render_widget(
-        Paragraph::new(help_text(app)).block(Block::default().borders(Borders::TOP)),
-        help,
-    );
+    if let Some(search) = &app.search_state {
+        let matches = app.search_matches();
+        let match_info = if search.query.is_empty() {
+            String::new()
+        } else {
+            format!("  ({} matches)", matches.len())
+        };
+        let search_line = Line::from(vec![
+            Span::styled("/", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+            Span::raw(&search.query),
+            Span::styled(&match_info, Style::default().fg(Color::DarkGray)),
+        ]);
+        f.render_widget(
+            Paragraph::new(search_line).block(Block::default().borders(Borders::TOP)),
+            help,
+        );
+        f.set_cursor_position((
+            help.x + 1 + search.cursor_pos as u16,
+            help.y + 1,
+        ));
+    } else {
+        f.render_widget(
+            Paragraph::new(help_text(app)).block(Block::default().borders(Borders::TOP)),
+            help,
+        );
+    }
 
     if app.detail_open {
         let Some(col) = app.board.columns.get(app.col) else {
@@ -326,16 +349,26 @@ pub fn draw_col(f: &mut Frame, app: &App, idx: usize, rect: Rect) {
 
     let border = if focused { Color::Cyan } else { Color::Gray };
 
+    let searching = app.search_state.as_ref().map_or(false, |s| !s.query.is_empty());
+
     let items: Vec<ListItem> = col
         .cards
         .iter()
         .map(|c| {
+            let dimmed = searching && !SearchState::matches_card(c, &app.search_state.as_ref().unwrap().query);
+            let prio_style = if dimmed {
+                Style::default().fg(Color::DarkGray)
+            } else {
+                Style::default().fg(priority_color(c.priority))
+            };
+            let title_style = if dimmed {
+                Style::default().fg(Color::DarkGray)
+            } else {
+                Style::default()
+            };
             ListItem::new(Line::from(vec![
-                Span::styled(
-                    format!("[{}] ", c.priority.short_label()),
-                    Style::default().fg(priority_color(c.priority)),
-                ),
-                Span::raw(c.title.clone()),
+                Span::styled(format!("[{}] ", c.priority.short_label()), prio_style),
+                Span::styled(c.title.clone(), title_style),
             ]))
         })
         .collect();

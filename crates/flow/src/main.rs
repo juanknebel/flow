@@ -17,7 +17,7 @@ use ratatui::{
 };
 
 use flow_core::{Board, provider, model::Priority};
-use flow_tui::{App, Action, EditState, EditFocus, ui::render, ui::action_from_key};
+use flow_tui::{App, Action, EditState, EditFocus, SearchState, ui::render, ui::action_from_key};
 
 fn main() -> io::Result<()> {
     enable_raw_mode()?;
@@ -176,6 +176,47 @@ fn run_tui(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> io::Result<
                         continue;
                     }
 
+                    if app.search_state.is_some() {
+                        match k.code {
+                            crossterm::event::KeyCode::Esc => {
+                                app.search_state = None;
+                            }
+                            crossterm::event::KeyCode::Enter => {
+                                app.search_state = None;
+                            }
+                            crossterm::event::KeyCode::Char(c) => {
+                                app.search_state.as_mut().unwrap().insert_char(c);
+                                let matches = app.search_matches();
+                                if !matches.is_empty() {
+                                    let current = (app.col, app.row);
+                                    if !matches.contains(&current) {
+                                        app.col = matches[0].0;
+                                        app.row = matches[0].1;
+                                    }
+                                }
+                            }
+                            crossterm::event::KeyCode::Backspace => {
+                                app.search_state.as_mut().unwrap().delete_prev();
+                                let matches = app.search_matches();
+                                if !matches.is_empty() {
+                                    let current = (app.col, app.row);
+                                    if !matches.contains(&current) {
+                                        app.col = matches[0].0;
+                                        app.row = matches[0].1;
+                                    }
+                                }
+                            }
+                            crossterm::event::KeyCode::Down => {
+                                app.select_next_match();
+                            }
+                            crossterm::event::KeyCode::Up => {
+                                app.select_prev_match();
+                            }
+                            _ => {}
+                        }
+                        continue;
+                    }
+
                     if app.confirm_delete {
                         match k.code {
                             crossterm::event::KeyCode::Char('y') | crossterm::event::KeyCode::Char('Y') => {
@@ -246,6 +287,9 @@ fn run_tui(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> io::Result<
                                 if !app.board.columns.is_empty() && !app.board.columns[app.col].cards.is_empty() {
                                     app.confirm_delete = true;
                                 }
+                            }
+                            Action::Search => {
+                                app.search_state = Some(SearchState::new());
                             }
                             Action::Edit => {
                                 if quitting {

@@ -1,4 +1,4 @@
-use flow_core::model::{Board, Priority, SortOrder};
+use flow_core::model::{Board, Card, Priority, SortOrder};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Action {
@@ -16,6 +16,7 @@ pub enum Action {
     Add,
     Edit,
     ToggleSort,
+    Search,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -134,6 +135,48 @@ impl EditState {
     }
 }
 
+pub struct SearchState {
+    pub query: String,
+    pub cursor_pos: usize,
+}
+
+impl SearchState {
+    pub fn new() -> Self {
+        Self {
+            query: String::new(),
+            cursor_pos: 0,
+        }
+    }
+
+    pub fn insert_char(&mut self, c: char) {
+        let pos = self.cursor_pos;
+        if pos >= self.query.len() {
+            self.query.push(c);
+        } else {
+            self.query.insert(pos, c);
+        }
+        self.cursor_pos += c.len_utf8();
+    }
+
+    pub fn delete_prev(&mut self) {
+        if self.cursor_pos > 0 {
+            let pos = self.cursor_pos;
+            if let Some((idx, _)) = self.query.char_indices().filter(|(i, _)| *i < pos).last() {
+                self.query.remove(idx);
+                self.cursor_pos = idx;
+            }
+        }
+    }
+
+    pub fn matches_card(card: &Card, query: &str) -> bool {
+        if query.is_empty() {
+            return false;
+        }
+        let q = query.to_lowercase();
+        card.title.to_lowercase().contains(&q) || card.description.to_lowercase().contains(&q)
+    }
+}
+
 pub struct App {
     pub board: Board,
     pub col: usize,
@@ -141,6 +184,7 @@ pub struct App {
     pub detail_open: bool,
     pub confirm_delete: bool,
     pub edit_state: Option<EditState>,
+    pub search_state: Option<SearchState>,
     pub banner: Option<String>,
     pub sort_order: SortOrder,
 }
@@ -154,6 +198,7 @@ impl App {
             detail_open: false,
             confirm_delete: false,
             edit_state: None,
+            search_state: None,
             banner: None,
             sort_order: SortOrder::default(),
         }
@@ -252,6 +297,8 @@ impl App {
             Action::CloseOrQuit => {
                 if self.edit_state.is_some() {
                     self.edit_state = None;
+                } else if self.search_state.is_some() {
+                    self.search_state = None;
                 } else if self.confirm_delete {
                     self.confirm_delete = false;
                 } else if self.detail_open {
@@ -274,13 +321,62 @@ impl App {
                 self.sort_order = self.sort_order.toggle();
                 self.board.sort_cards_with(self.sort_order);
             }
-            Action::Refresh | Action::MoveLeft | Action::MoveRight | Action::Add | Action::Edit => {}
+            Action::Refresh | Action::MoveLeft | Action::MoveRight | Action::Add | Action::Edit | Action::Search => {}
         }
         false
     }
 
     pub fn focus_first_non_empty(&mut self) {
         (self.col, self.row) = (first_non_empty_column(&self.board).unwrap_or(0), 0);
+    }
+
+    pub fn search_matches(&self) -> Vec<(usize, usize)> {
+        let Some(search) = &self.search_state else {
+            return vec![];
+        };
+        if search.query.is_empty() {
+            return vec![];
+        }
+        let mut matches = Vec::new();
+        for (col_idx, col) in self.board.columns.iter().enumerate() {
+            for (card_idx, card) in col.cards.iter().enumerate() {
+                if SearchState::matches_card(card, &search.query) {
+                    matches.push((col_idx, card_idx));
+                }
+            }
+        }
+        matches
+    }
+
+    pub fn select_next_match(&mut self) {
+        let matches = self.search_matches();
+        if matches.is_empty() {
+            return;
+        }
+        let current = (self.col, self.row);
+        if let Some(&(col, row)) = matches.iter().find(|&&pos| pos > current) {
+            self.col = col;
+            self.row = row;
+        } else {
+            self.col = matches[0].0;
+            self.row = matches[0].1;
+        }
+    }
+
+    pub fn select_prev_match(&mut self) {
+        let matches = self.search_matches();
+        if matches.is_empty() {
+            return;
+        }
+        let current = (self.col, self.row);
+        if let Some(&(col, row)) = matches.iter().rev().find(|&&pos| pos < current) {
+            self.col = col;
+            self.row = row;
+        } else {
+            let last = matches[matches.len() - 1];
+            self.col = last.0;
+            self.row = last.1;
+        }
     }
 
     pub fn optimistic_move(&mut self, dir: isize) -> Option<(String, String)> {
@@ -455,5 +551,119 @@ mod tests {
         assert_eq!(EditFocus::Priority.next(), EditFocus::Assignee);
         assert_eq!(EditFocus::Assignee.next(), EditFocus::Description);
         assert_eq!(EditFocus::Description.next(), EditFocus::Title);
+    }
+
+    fn card_with_desc(id: &str, title: &str, desc: &str) -> Card {
+        Card {
+            id: id.into(),
+            title: title.into(),
+            description: desc.into(),
+            priority: Priority::Medium,
+            assignee: String::new(),
+        }
+    }
+
+    fn search_board() -> Board {
+        Board {
+            columns: vec![
+                Column {
+                    id: "todo".into(),
+                    title: "Todo".into(),
+                    cards: vec![
+                        card_with_desc("1", "Fix login bug", "auth issue"),
+                        card_with_desc("2", "Add search", "filter cards"),
+                    ],
+                },
+                Column {
+                    id: "done".into(),
+                    title: "Done".into(),
+                    cards: vec![
+                        card_with_desc("3", "Setup CI", "pipeline bug fix"),
+                    ],
+                },
+            ],
+        }
+    }
+
+    #[test]
+    fn search_matches_card_by_title() {
+        let card = card_with_desc("1", "Fix login bug", "some desc");
+        assert!(SearchState::matches_card(&card, "login"));
+        assert!(SearchState::matches_card(&card, "LOGIN")); // case-insensitive
+        assert!(!SearchState::matches_card(&card, "missing"));
+    }
+
+    #[test]
+    fn search_matches_card_by_description() {
+        let card = card_with_desc("1", "title", "auth issue");
+        assert!(SearchState::matches_card(&card, "auth"));
+        assert!(!SearchState::matches_card(&card, "missing"));
+    }
+
+    #[test]
+    fn search_empty_query_matches_nothing() {
+        let card = card_with_desc("1", "title", "desc");
+        assert!(!SearchState::matches_card(&card, ""));
+    }
+
+    #[test]
+    fn search_matches_returns_matching_positions() {
+        let mut app = App::new(search_board());
+        app.search_state = Some(SearchState { query: "bug".into(), cursor_pos: 3 });
+
+        let matches = app.search_matches();
+        assert_eq!(matches, vec![(0, 0), (1, 0)]); // "Fix login bug" and "pipeline bug fix"
+    }
+
+    #[test]
+    fn select_next_match_wraps_around() {
+        let mut app = App::new(search_board());
+        app.search_state = Some(SearchState { query: "bug".into(), cursor_pos: 3 });
+        // matches: (0,0) "Fix login bug", (1,0) "pipeline bug fix"
+
+        app.select_next_match(); // from (0,0) → next match is (1,0)
+        assert_eq!((app.col, app.row), (1, 0));
+
+        app.select_next_match(); // wraps to (0,0)
+        assert_eq!((app.col, app.row), (0, 0));
+    }
+
+    #[test]
+    fn select_prev_match_wraps_around() {
+        let mut app = App::new(search_board());
+        app.search_state = Some(SearchState { query: "bug".into(), cursor_pos: 3 });
+
+        app.select_prev_match(); // wraps to last
+        assert_eq!((app.col, app.row), (1, 0));
+
+        app.select_prev_match();
+        assert_eq!((app.col, app.row), (0, 0));
+    }
+
+    #[test]
+    fn close_or_quit_closes_search_before_detail() {
+        let mut app = App::new(search_board());
+        app.search_state = Some(SearchState::new());
+        app.detail_open = true;
+
+        assert!(!app.apply(Action::CloseOrQuit));
+        assert!(app.search_state.is_none());
+        assert!(app.detail_open); // detail still open
+
+        assert!(!app.apply(Action::CloseOrQuit));
+        assert!(!app.detail_open);
+    }
+
+    #[test]
+    fn search_insert_and_delete() {
+        let mut search = SearchState::new();
+        search.insert_char('a');
+        search.insert_char('b');
+        assert_eq!(search.query, "ab");
+        assert_eq!(search.cursor_pos, 2);
+
+        search.delete_prev();
+        assert_eq!(search.query, "a");
+        assert_eq!(search.cursor_pos, 1);
     }
 }
