@@ -138,17 +138,21 @@ mod tests {
         time::{SystemTime, UNIX_EPOCH},
     };
 
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
     fn tmp_root() -> PathBuf {
         let n = SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .unwrap()
+            .unwrap_or_default()
             .as_nanos();
         std::env::temp_dir().join(format!("flow-provider-test-{n}"))
     }
 
-    fn write(p: &Path, s: &str) {
-        fs::create_dir_all(p.parent().unwrap()).unwrap();
-        fs::write(p, s).unwrap();
+    fn write(p: &Path, s: &str) -> io::Result<()> {
+        if let Some(parent) = p.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        fs::write(p, s)
     }
 
     #[test]
@@ -164,9 +168,9 @@ mod tests {
     }
 
     #[test]
-    fn move_card_returns_not_found() {
+    fn move_card_returns_not_found() -> TestResult {
         let root = tmp_root();
-        write(&root.join("board.txt"), "col todo\n");
+        write(&root.join("board.txt"), "col todo\n")?;
 
         let mut provider = LocalProvider { root: root.clone() };
         let err = provider.move_card("X-1", "todo").unwrap_err();
@@ -176,6 +180,7 @@ mod tests {
             _ => panic!("expected NotFound error"),
         }
 
-        fs::remove_dir_all(root).unwrap();
+        fs::remove_dir_all(root)?;
+        Ok(())
     }
 }

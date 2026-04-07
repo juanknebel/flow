@@ -35,8 +35,8 @@ struct CardOut {
     project: String,
 }
 
-pub fn format_board(board: &Board, fmt: Format) -> String {
-    match fmt {
+pub fn format_board(board: &Board, fmt: Format) -> Result<String, serde_json::Error> {
+    Ok(match fmt {
         Format::Plain => {
             let mut out = String::new();
             for col in &board.columns {
@@ -54,7 +54,7 @@ pub fn format_board(board: &Board, fmt: Format) -> String {
             }
             chomp(out)
         }
-        Format::Json => serde_json::to_string_pretty(&board_dto(board)).unwrap(),
+        Format::Json => serde_json::to_string_pretty(&board_dto(board))?,
         Format::Xml => {
             let mut out = String::from("<board>\n");
             for col in &board.columns {
@@ -131,7 +131,7 @@ pub fn format_board(board: &Board, fmt: Format) -> String {
             }
             chomp(out)
         }
-    }
+    })
 }
 
 fn board_dto(board: &Board) -> BoardOut {
@@ -171,8 +171,8 @@ struct CardDetailOut {
     column_title: String,
 }
 
-pub fn format_card(card: &Card, col_id: &str, col_title: &str, fmt: Format) -> String {
-    match fmt {
+pub fn format_card(card: &Card, col_id: &str, col_title: &str, fmt: Format) -> Result<String, serde_json::Error> {
+    Ok(match fmt {
         Format::Plain => {
             let mut out = format!("{}\n{}\npriority: {}\ncolumn: {} ({})\n", card.id, card.title, card.priority.label(), col_title, col_id);
             if !card.project.is_empty() {
@@ -197,7 +197,7 @@ pub fn format_card(card: &Card, col_id: &str, col_title: &str, fmt: Format) -> S
             column_id: col_id.to_string(),
             column_title: col_title.to_string(),
         })
-        .unwrap(),
+        ?,
         Format::Xml => {
             let mut out = format!(
                 "<card id=\"{}\" title=\"{}\" priority=\"{}\" project=\"{}\" column_id=\"{}\" column_title=\"{}\">",
@@ -260,7 +260,7 @@ pub fn format_card(card: &Card, col_id: &str, col_title: &str, fmt: Format) -> S
             }
             chomp(out)
         }
-    }
+    })
 }
 
 // ---- Columns listing ----
@@ -277,8 +277,8 @@ struct ColumnInfoOut {
     count: usize,
 }
 
-pub fn format_columns(board: &Board, fmt: Format) -> String {
-    match fmt {
+pub fn format_columns(board: &Board, fmt: Format) -> Result<String, serde_json::Error> {
+    Ok(match fmt {
         Format::Plain => {
             let mut out = String::new();
             for col in &board.columns {
@@ -286,7 +286,7 @@ pub fn format_columns(board: &Board, fmt: Format) -> String {
             }
             chomp(out)
         }
-        Format::Json => serde_json::to_string_pretty(&columns_dto(board)).unwrap(),
+        Format::Json => serde_json::to_string_pretty(&columns_dto(board))?,
         Format::Xml => {
             let mut out = String::from("<columns>\n");
             for col in &board.columns {
@@ -337,7 +337,7 @@ pub fn format_columns(board: &Board, fmt: Format) -> String {
             }
             chomp(out)
         }
-    }
+    })
 }
 
 fn columns_dto(board: &Board) -> ColumnsOut {
@@ -356,8 +356,8 @@ fn columns_dto(board: &Board) -> ColumnsOut {
 
 // ---- Action result (move, create, edit) ----
 
-pub fn format_result(pairs: &[(&str, &str)], fmt: Format) -> String {
-    match fmt {
+pub fn format_result(pairs: &[(&str, &str)], fmt: Format) -> Result<String, serde_json::Error> {
+    Ok(match fmt {
         Format::Plain => pairs
             .iter()
             .map(|(k, v)| format!("{k}: {v}"))
@@ -368,7 +368,7 @@ pub fn format_result(pairs: &[(&str, &str)], fmt: Format) -> String {
                 .iter()
                 .map(|(k, v)| (k.to_string(), serde_json::Value::String(v.to_string())))
                 .collect();
-            serde_json::to_string_pretty(&serde_json::Value::Object(map)).unwrap()
+            serde_json::to_string_pretty(&serde_json::Value::Object(map))?
         }
         Format::Xml => {
             let mut out = String::from("<result");
@@ -393,7 +393,7 @@ pub fn format_result(pairs: &[(&str, &str)], fmt: Format) -> String {
             .map(|(k, v)| format!("- **{k}**: {v}"))
             .collect::<Vec<_>>()
             .join("\n"),
-    }
+    })
 }
 
 // ---- Helpers ----
@@ -471,6 +471,8 @@ mod tests {
     use super::*;
     use crate::model::{Board, Card, Column, Priority};
 
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
     fn sample_board() -> Board {
         Board {
             columns: vec![
@@ -498,47 +500,51 @@ mod tests {
     // ---- format_board ----
 
     #[test]
-    fn board_plain() {
-        let out = format_board(&sample_board(), Format::Plain);
+    fn board_plain() -> TestResult {
+        let out = format_board(&sample_board(), Format::Plain)?;
         assert!(out.contains("== To Do (1) =="));
         assert!(out.contains("FLOW-1"));
         assert!(out.contains("MEDIUM"));
         assert!(out.contains("First task"));
         assert!(out.contains("== Done (0) =="));
+        Ok(())
     }
 
     #[test]
-    fn board_json_parses() {
-        let out = format_board(&sample_board(), Format::Json);
-        let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+    fn board_json_parses() -> TestResult {
+        let out = format_board(&sample_board(), Format::Json)?;
+        let v: serde_json::Value = serde_json::from_str(&out)?;
         assert_eq!(v["columns"][0]["cards"][0]["id"], "FLOW-1");
         assert_eq!(v["columns"][0]["cards"][0]["priority"], "MEDIUM");
         assert_eq!(v["columns"][0]["id"], "todo");
-        assert_eq!(v["columns"].as_array().unwrap().len(), 2);
+        assert_eq!(v["columns"].as_array().ok_or("not an array")?.len(), 2);
+        Ok(())
     }
 
     #[test]
-    fn board_csv_has_header_and_rows() {
-        let out = format_board(&sample_board(), Format::Csv);
+    fn board_csv_has_header_and_rows() -> TestResult {
+        let out = format_board(&sample_board(), Format::Csv)?;
         let lines: Vec<&str> = out.lines().collect();
         assert_eq!(lines[0], "column_id,column_title,card_id,card_title,priority,project");
         assert_eq!(lines[1], "todo,To Do,FLOW-1,First task,MEDIUM,");
         assert_eq!(lines.len(), 2);
+        Ok(())
     }
 
     #[test]
-    fn board_xml_structure() {
-        let out = format_board(&sample_board(), Format::Xml);
+    fn board_xml_structure() -> TestResult {
+        let out = format_board(&sample_board(), Format::Xml)?;
         assert!(out.starts_with("<board>"));
         assert!(out.ends_with("</board>"));
         assert!(out.contains("id=\"FLOW-1\""));
         assert!(out.contains("priority=\"MEDIUM\""));
         assert!(out.contains("title=\"To Do\""));
+        Ok(())
     }
 
     #[test]
-    fn board_table_has_header_and_separator() {
-        let out = format_board(&sample_board(), Format::Table);
+    fn board_table_has_header_and_separator() -> TestResult {
+        let out = format_board(&sample_board(), Format::Table)?;
         let lines: Vec<&str> = out.lines().collect();
         assert!(lines[0].contains("COLUMN"));
         assert!(lines[0].contains("PROJECT"));
@@ -548,14 +554,16 @@ mod tests {
         assert!(lines[1].contains("---"));
         assert!(lines[2].contains("FLOW-1"));
         assert!(lines[2].contains("MEDIUM"));
+        Ok(())
     }
 
     #[test]
-    fn board_markdown() {
-        let out = format_board(&sample_board(), Format::Markdown);
+    fn board_markdown() -> TestResult {
+        let out = format_board(&sample_board(), Format::Markdown)?;
         assert!(out.contains("## To Do (1)"));
         assert!(out.contains("- **FLOW-1** [MEDIUM] First task"));
         assert!(out.contains("## Done (0)"));
+        Ok(())
     }
 
     // ---- format_card ----
@@ -572,17 +580,18 @@ mod tests {
     }
 
     #[test]
-    fn card_plain_shows_fields() {
-        let out = format_card(&sample_card(), "todo", "To Do", Format::Plain);
+    fn card_plain_shows_fields() -> TestResult {
+        let out = format_card(&sample_card(), "todo", "To Do", Format::Plain)?;
         assert!(out.contains("X-1"));
         assert!(out.contains("My task"));
         assert!(out.contains("priority: HIGH"));
         assert!(out.contains("column: To Do (todo)"));
         assert!(out.contains("Some details"));
+        Ok(())
     }
 
     #[test]
-    fn card_plain_omits_empty_description() {
+    fn card_plain_omits_empty_description() -> TestResult {
         let card = Card {
             id: "X-2".into(),
             title: "No desc".into(),
@@ -591,145 +600,163 @@ mod tests {
             assignee: String::new(),
             project: String::new(),
         };
-        let out = format_card(&card, "done", "Done", Format::Plain);
+        let out = format_card(&card, "done", "Done", Format::Plain)?;
         assert!(!out.contains("  \n"));
         assert!(out.ends_with("(done)"));
+        Ok(())
     }
 
     #[test]
-    fn card_json_parses_all_fields() {
-        let out = format_card(&sample_card(), "todo", "To Do", Format::Json);
-        let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+    fn card_json_parses_all_fields() -> TestResult {
+        let out = format_card(&sample_card(), "todo", "To Do", Format::Json)?;
+        let v: serde_json::Value = serde_json::from_str(&out)?;
         assert_eq!(v["id"], "X-1");
         assert_eq!(v["title"], "My task");
         assert_eq!(v["description"], "Some details");
         assert_eq!(v["priority"], "HIGH");
         assert_eq!(v["column_id"], "todo");
         assert_eq!(v["column_title"], "To Do");
+        Ok(())
     }
 
     #[test]
-    fn card_xml_structure() {
-        let out = format_card(&sample_card(), "todo", "To Do", Format::Xml);
+    fn card_xml_structure() -> TestResult {
+        let out = format_card(&sample_card(), "todo", "To Do", Format::Xml)?;
         assert!(out.starts_with("<card "));
         assert!(out.ends_with("</card>"));
         assert!(out.contains("<description>"));
         assert!(out.contains("priority=\"HIGH\""));
+        Ok(())
     }
 
     #[test]
-    fn card_csv_has_header_and_row() {
-        let out = format_card(&sample_card(), "todo", "To Do", Format::Csv);
+    fn card_csv_has_header_and_row() -> TestResult {
+        let out = format_card(&sample_card(), "todo", "To Do", Format::Csv)?;
         let lines: Vec<&str> = out.lines().collect();
         assert_eq!(lines[0], "id,title,description,priority,assignee,project,column_id,column_title");
         assert!(lines[1].contains("X-1"));
         assert!(lines[1].contains("HIGH"));
+        Ok(())
     }
 
     #[test]
-    fn card_table_shows_fields() {
-        let out = format_card(&sample_card(), "todo", "To Do", Format::Table);
+    fn card_table_shows_fields() -> TestResult {
+        let out = format_card(&sample_card(), "todo", "To Do", Format::Table)?;
         assert!(out.contains("FIELD"));
         assert!(out.contains("VALUE"));
         assert!(out.contains("My task"));
         assert!(out.contains("HIGH"));
+        Ok(())
     }
 
     #[test]
-    fn card_markdown() {
-        let out = format_card(&sample_card(), "todo", "To Do", Format::Markdown);
+    fn card_markdown() -> TestResult {
+        let out = format_card(&sample_card(), "todo", "To Do", Format::Markdown)?;
         assert!(out.contains("# My task"));
         assert!(out.contains("**X-1**"));
         assert!(out.contains("Priority: HIGH"));
         assert!(out.contains("Some details"));
+        Ok(())
     }
 
     // ---- format_columns ----
 
     #[test]
-    fn columns_plain() {
-        let out = format_columns(&sample_board(), Format::Plain);
+    fn columns_plain() -> TestResult {
+        let out = format_columns(&sample_board(), Format::Plain)?;
         assert!(out.contains("todo  To Do  (1)"));
         assert!(out.contains("done  Done  (0)"));
+        Ok(())
     }
 
     #[test]
-    fn columns_json_parses() {
-        let out = format_columns(&sample_board(), Format::Json);
-        let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+    fn columns_json_parses() -> TestResult {
+        let out = format_columns(&sample_board(), Format::Json)?;
+        let v: serde_json::Value = serde_json::from_str(&out)?;
         assert_eq!(v["columns"][0]["id"], "todo");
         assert_eq!(v["columns"][0]["count"], 1);
         assert_eq!(v["columns"][1]["count"], 0);
+        Ok(())
     }
 
     #[test]
-    fn columns_xml_structure() {
-        let out = format_columns(&sample_board(), Format::Xml);
+    fn columns_xml_structure() -> TestResult {
+        let out = format_columns(&sample_board(), Format::Xml)?;
         assert!(out.starts_with("<columns>"));
         assert!(out.contains("count=\"1\""));
+        Ok(())
     }
 
     #[test]
-    fn columns_csv_has_header() {
-        let out = format_columns(&sample_board(), Format::Csv);
+    fn columns_csv_has_header() -> TestResult {
+        let out = format_columns(&sample_board(), Format::Csv)?;
         let lines: Vec<&str> = out.lines().collect();
         assert_eq!(lines[0], "id,title,count");
         assert!(lines[1].starts_with("todo,"));
+        Ok(())
     }
 
     #[test]
-    fn columns_table() {
-        let out = format_columns(&sample_board(), Format::Table);
+    fn columns_table() -> TestResult {
+        let out = format_columns(&sample_board(), Format::Table)?;
         assert!(out.contains("ID"));
         assert!(out.contains("TITLE"));
         assert!(out.contains("COUNT"));
+        Ok(())
     }
 
     #[test]
-    fn columns_markdown_table() {
-        let out = format_columns(&sample_board(), Format::Markdown);
+    fn columns_markdown_table() -> TestResult {
+        let out = format_columns(&sample_board(), Format::Markdown)?;
         assert!(out.contains("| todo | To Do | 1 |"));
+        Ok(())
     }
 
     // ---- format_result ----
 
     #[test]
-    fn result_plain() {
-        let out = format_result(&[("action", "move"), ("card_id", "X-1")], Format::Plain);
+    fn result_plain() -> TestResult {
+        let out = format_result(&[("action", "move"), ("card_id", "X-1")], Format::Plain)?;
         assert_eq!(out, "action: move\ncard_id: X-1");
+        Ok(())
     }
 
     #[test]
-    fn result_json_parses() {
-        let out = format_result(&[("action", "move"), ("card_id", "X-1")], Format::Json);
-        let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+    fn result_json_parses() -> TestResult {
+        let out = format_result(&[("action", "move"), ("card_id", "X-1")], Format::Json)?;
+        let v: serde_json::Value = serde_json::from_str(&out)?;
         assert_eq!(v["action"], "move");
         assert_eq!(v["card_id"], "X-1");
+        Ok(())
     }
 
     #[test]
-    fn result_xml() {
-        let out = format_result(&[("action", "move"), ("card_id", "X-1")], Format::Xml);
+    fn result_xml() -> TestResult {
+        let out = format_result(&[("action", "move"), ("card_id", "X-1")], Format::Xml)?;
         assert_eq!(out, "<result action=\"move\" card_id=\"X-1\"/>");
+        Ok(())
     }
 
     #[test]
-    fn result_csv() {
-        let out = format_result(&[("action", "move"), ("card_id", "X-1")], Format::Csv);
+    fn result_csv() -> TestResult {
+        let out = format_result(&[("action", "move"), ("card_id", "X-1")], Format::Csv)?;
         assert_eq!(out, "action,card_id\nmove,X-1");
+        Ok(())
     }
 
     #[test]
-    fn result_table() {
-        let out = format_result(&[("action", "move")], Format::Table);
+    fn result_table() -> TestResult {
+        let out = format_result(&[("action", "move")], Format::Table)?;
         assert!(out.contains("action"));
         assert!(out.contains("move"));
+        Ok(())
     }
 
     #[test]
-    fn result_markdown() {
-        let out = format_result(&[("action", "move"), ("card_id", "X-1")], Format::Markdown);
+    fn result_markdown() -> TestResult {
+        let out = format_result(&[("action", "move"), ("card_id", "X-1")], Format::Markdown)?;
         assert_eq!(out, "- **action**: move\n- **card_id**: X-1");
+        Ok(())
     }
 
     // ---- helpers ----

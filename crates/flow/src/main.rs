@@ -219,7 +219,9 @@ fn run_tui(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> io::Result<
                                 app.search_state = None;
                             }
                             crossterm::event::KeyCode::Char(c) => {
-                                app.search_state.as_mut().unwrap().insert_char(c);
+                                if let Some(search) = app.search_state.as_mut() {
+                                    search.insert_char(c);
+                                }
                                 let matches = app.search_matches();
                                 if !matches.is_empty() {
                                     let current = (app.col, app.row);
@@ -230,7 +232,9 @@ fn run_tui(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> io::Result<
                                 }
                             }
                             crossterm::event::KeyCode::Backspace => {
-                                app.search_state.as_mut().unwrap().delete_prev();
+                                if let Some(search) = app.search_state.as_mut() {
+                                    search.delete_prev();
+                                }
                                 let matches = app.search_matches();
                                 if !matches.is_empty() {
                                     let current = (app.col, app.row);

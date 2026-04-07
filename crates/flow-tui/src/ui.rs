@@ -422,7 +422,7 @@ pub fn draw_col(f: &mut Frame, app: &App, idx: usize, rect: Rect) {
         .cards
         .iter()
         .map(|c| {
-            let dimmed = searching && !SearchState::matches_card(c, &app.search_state.as_ref().unwrap().query);
+            let dimmed = searching && app.search_state.as_ref().map_or(false, |s| !SearchState::matches_card(c, &s.query));
             let prio_style = if dimmed {
                 Style::default().fg(Color::DarkGray)
             } else {

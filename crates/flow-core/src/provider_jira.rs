@@ -237,14 +237,16 @@ impl Provider for JiraProvider {
                 .unwrap_or("")
                 .to_string();
 
-            columns.get_mut(&column_name).unwrap().push(Card {
-                id: issue.key,
-                title: issue.fields.summary,
-                description: desc,
-                priority: Priority::Medium,
-                assignee,
-                project: String::new(),
-            });
+            if let Some(cards) = columns.get_mut(&column_name) {
+                cards.push(Card {
+                    id: issue.key,
+                    title: issue.fields.summary,
+                    description: desc,
+                    priority: Priority::Medium,
+                    assignee,
+                    project: String::new(),
+                });
+            }
         }
 
         let mut col_order = Vec::new();
@@ -618,7 +620,7 @@ mod tests {
     }
 
     #[test]
-    fn pick_transition_prefers_open_for_todo() {
+    fn pick_transition_prefers_open_for_todo() -> Result<(), Box<dyn std::error::Error>> {
         let transitions = vec![
             Transition {
                 id: "2".to_string(),
@@ -637,9 +639,11 @@ mod tests {
         ];
 
         let status_ids = vec!["1".to_string(), "2".to_string()];
-        let t = pick_transition_for_column(&transitions, "To Do", &status_ids).unwrap();
+        let t = pick_transition_for_column(&transitions, "To Do", &status_ids)
+            .ok_or("expected a transition")?;
 
         assert_eq!(t.to.name, "Open");
+        Ok(())
     }
 
     #[test]

@@ -258,7 +258,9 @@ fn order_append(path: &Path, id: &str) -> io::Result<()> {
 
     let mut s = lines.join("\n");
     s.push('\n');
-    fs::create_dir_all(path.parent().unwrap())?;
+    let parent = path.parent()
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "path has no parent"))?;
+    fs::create_dir_all(parent)?;
     fs::write(path, s)
 }
 
@@ -271,50 +273,55 @@ mod tests {
         time::{SystemTime, UNIX_EPOCH},
     };
 
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
     fn tmp_root() -> PathBuf {
         let n = SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .unwrap()
+            .unwrap_or_default()
             .as_nanos();
         std::env::temp_dir().join(format!("flow-test-{n}"))
     }
 
-    fn write(p: &Path, s: &str) {
-        fs::create_dir_all(p.parent().unwrap()).unwrap();
-        fs::write(p, s).unwrap();
+    fn write(p: &Path, s: &str) -> io::Result<()> {
+        if let Some(parent) = p.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        fs::write(p, s)
     }
 
     #[test]
-    fn load_and_move_persists() {
+    fn load_and_move_persists() -> TestResult {
         let root = tmp_root();
-        fs::create_dir_all(root.join("cols")).unwrap();
+        fs::create_dir_all(root.join("cols"))?;
 
         write(
             &root.join("board.txt"),
             "col todo \"TO DO\"\ncol done \"DONE\"\n",
-        );
-        write(&root.join("cols/todo/order.txt"), "A-1\n");
-        write(&root.join("cols/todo/A-1.md"), "# Title\n\nBody\n");
-        write(&root.join("cols/done/order.txt"), "");
+        )?;
+        write(&root.join("cols/todo/order.txt"), "A-1\n")?;
+        write(&root.join("cols/todo/A-1.md"), "# Title\n\nBody\n")?;
+        write(&root.join("cols/done/order.txt"), "")?;
 
-        let b = load_board(&root).unwrap();
+        let b = load_board(&root)?;
         assert_eq!(b.columns[0].cards.len(), 1);
         assert_eq!(b.columns[0].cards[0].priority, Priority::Medium);
 
-        move_card(&root, "A-1", "done").unwrap();
+        move_card(&root, "A-1", "done")?;
 
-        let b2 = load_board(&root).unwrap();
+        let b2 = load_board(&root)?;
         assert_eq!(b2.columns[1].cards.len(), 1);
 
-        fs::remove_dir_all(root).unwrap();
+        fs::remove_dir_all(root)?;
+        Ok(())
     }
 
     #[test]
-    fn create_card_persists_file_and_order() {
+    fn create_card_persists_file_and_order() -> TestResult {
         let root = tmp_root();
-        write(&root.join("board.txt"), "col todo\n");
+        write(&root.join("board.txt"), "col todo\n")?;
 
-        let id = create_card(&root, "todo", "TestProj").unwrap();
+        let id = create_card(&root, "todo", "TestProj")?;
         assert!(id.starts_with("TESTPROJ-"));
         assert!(
             root.join("cols")
@@ -323,19 +330,20 @@ mod tests {
                 .exists()
         );
 
-        let order = fs::read_to_string(root.join("cols/todo/order.txt")).unwrap();
+        let order = fs::read_to_string(root.join("cols/todo/order.txt"))?;
         assert!(order.lines().any(|l| l == id));
 
-        fs::remove_dir_all(root).unwrap();
+        fs::remove_dir_all(root)?;
+        Ok(())
     }
 
     #[test]
-    fn delete_card_removes_file_and_order() {
+    fn delete_card_removes_file_and_order() -> TestResult {
         let root = tmp_root();
-        write(&root.join("board.txt"), "col todo\n");
-        let id = create_card(&root, "todo", "TestProj").unwrap();
+        write(&root.join("board.txt"), "col todo\n")?;
+        let id = create_card(&root, "todo", "TestProj")?;
 
-        delete_card(&root, &id).unwrap();
+        delete_card(&root, &id)?;
 
         assert!(
             !root.join("cols")
@@ -344,63 +352,67 @@ mod tests {
                 .exists()
         );
 
-        let order = fs::read_to_string(root.join("cols/todo/order.txt")).unwrap();
+        let order = fs::read_to_string(root.join("cols/todo/order.txt"))?;
         assert!(!order.lines().any(|l| l == id));
 
-        fs::remove_dir_all(root).unwrap();
+        fs::remove_dir_all(root)?;
+        Ok(())
     }
 
     #[test]
-    fn write_and_read_card_content_roundtrips() {
+    fn write_and_read_card_content_roundtrips() -> TestResult {
         let root = tmp_root();
-        fs::create_dir_all(&root).unwrap();
+        fs::create_dir_all(&root)?;
         let path = root.join("CARD.md");
 
-        write_card_content(&path, "My Title", "Body text", Priority::High, "user@test.com", "ProjectX").unwrap();
+        write_card_content(&path, "My Title", "Body text", Priority::High, "user@test.com", "ProjectX")?;
 
-        let (title, body, priority, assignee, project) = read_card_content(&path).unwrap();
+        let (title, body, priority, assignee, project) = read_card_content(&path)?;
         assert_eq!(title, "My Title");
         assert_eq!(body, "Body text");
         assert_eq!(priority, Priority::High);
         assert_eq!(assignee, "user@test.com");
         assert_eq!(project, "ProjectX");
 
-        fs::remove_dir_all(root).unwrap();
+        fs::remove_dir_all(root)?;
+        Ok(())
     }
 
     #[test]
-    fn write_card_content_empty_body() {
+    fn write_card_content_empty_body() -> TestResult {
         let root = tmp_root();
-        fs::create_dir_all(&root).unwrap();
+        fs::create_dir_all(&root)?;
         let path = root.join("CARD.md");
 
-        write_card_content(&path, "Title Only", "", Priority::Low, "", "").unwrap();
+        write_card_content(&path, "Title Only", "", Priority::Low, "", "")?;
 
-        let (title, body, priority, assignee, project) = read_card_content(&path).unwrap();
+        let (title, body, priority, assignee, project) = read_card_content(&path)?;
         assert_eq!(title, "Title Only");
         assert!(body.is_empty());
         assert_eq!(priority, Priority::Low);
         assert!(assignee.is_empty());
         assert!(project.is_empty());
 
-        fs::remove_dir_all(root).unwrap();
+        fs::remove_dir_all(root)?;
+        Ok(())
     }
 
     #[test]
-    fn write_card_content_preserves_multiline_body() {
+    fn write_card_content_preserves_multiline_body() -> TestResult {
         let root = tmp_root();
-        fs::create_dir_all(&root).unwrap();
+        fs::create_dir_all(&root)?;
         let path = root.join("CARD.md");
 
-        write_card_content(&path, "Title", "Line 1\nLine 2\nLine 3", Priority::Bug, "", "").unwrap();
+        write_card_content(&path, "Title", "Line 1\nLine 2\nLine 3", Priority::Bug, "", "")?;
 
-        let (title, body, priority, _, _) = read_card_content(&path).unwrap();
+        let (title, body, priority, _, _) = read_card_content(&path)?;
         assert_eq!(title, "Title");
         assert!(body.contains("Line 1"));
         assert!(body.contains("Line 3"));
         assert_eq!(priority, Priority::Bug);
 
-        fs::remove_dir_all(root).unwrap();
+        fs::remove_dir_all(root)?;
+        Ok(())
     }
 
     #[test]
@@ -425,40 +437,42 @@ mod tests {
     }
 
     #[test]
-    fn load_board_sorts_cards_by_priority_then_title() {
+    fn load_board_sorts_cards_by_priority_then_title() -> TestResult {
         let root = tmp_root();
-        fs::create_dir_all(root.join("cols")).unwrap();
+        fs::create_dir_all(root.join("cols"))?;
 
         write(
             &root.join("board.txt"),
             "col todo \"TO DO\"\n",
-        );
-        write(&root.join("cols/todo/order.txt"), "A\nB\nC\nD\nE\n");
-        write_card_content(&root.join("cols/todo/A.md"), "Zebra", "", Priority::Low, "", "").unwrap();
-        write_card_content(&root.join("cols/todo/B.md"), "Alpha", "", Priority::High, "", "").unwrap();
-        write_card_content(&root.join("cols/todo/C.md"), "Beta", "", Priority::High, "", "").unwrap();
-        write_card_content(&root.join("cols/todo/D.md"), "Crash", "", Priority::Bug, "", "").unwrap();
-        write_card_content(&root.join("cols/todo/E.md"), "Nice to have", "", Priority::Wishlist, "", "").unwrap();
+        )?;
+        write(&root.join("cols/todo/order.txt"), "A\nB\nC\nD\nE\n")?;
+        write_card_content(&root.join("cols/todo/A.md"), "Zebra", "", Priority::Low, "", "")?;
+        write_card_content(&root.join("cols/todo/B.md"), "Alpha", "", Priority::High, "", "")?;
+        write_card_content(&root.join("cols/todo/C.md"), "Beta", "", Priority::High, "", "")?;
+        write_card_content(&root.join("cols/todo/D.md"), "Crash", "", Priority::Bug, "", "")?;
+        write_card_content(&root.join("cols/todo/E.md"), "Nice to have", "", Priority::Wishlist, "", "")?;
 
-        let b = load_board(&root).unwrap();
+        let b = load_board(&root)?;
         let titles: Vec<&str> = b.columns[0].cards.iter().map(|c| c.title.as_str()).collect();
         assert_eq!(titles, vec!["Crash", "Alpha", "Beta", "Zebra", "Nice to have"]);
 
-        fs::remove_dir_all(root).unwrap();
+        fs::remove_dir_all(root)?;
+        Ok(())
     }
 
     #[test]
-    fn frontmatter_roundtrip_all_priorities() {
+    fn frontmatter_roundtrip_all_priorities() -> TestResult {
         let root = tmp_root();
-        fs::create_dir_all(&root).unwrap();
+        fs::create_dir_all(&root)?;
         let path = root.join("CARD.md");
 
         for p in [Priority::Low, Priority::Medium, Priority::High, Priority::Bug, Priority::Wishlist] {
-            write_card_content(&path, "Test", "Body", p, "", "").unwrap();
-            let (_, _, got, _, _) = read_card_content(&path).unwrap();
+            write_card_content(&path, "Test", "Body", p, "", "")?;
+            let (_, _, got, _, _) = read_card_content(&path)?;
             assert_eq!(got, p, "roundtrip failed for {:?}", p);
         }
 
-        fs::remove_dir_all(root).unwrap();
+        fs::remove_dir_all(root)?;
+        Ok(())
     }
 }

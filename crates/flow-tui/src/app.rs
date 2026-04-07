@@ -511,10 +511,10 @@ mod tests {
     }
 
     #[test]
-    fn move_right_moves_card_and_updates_focus_to_new_card() {
+    fn move_right_moves_card_and_updates_focus_to_new_card() -> Result<(), Box<dyn std::error::Error>> {
         let mut app = App::new(board_two_cols());
 
-        let (id, dst) = app.optimistic_move(1).unwrap();
+        let (id, dst) = app.optimistic_move(1).ok_or("expected a move")?;
 
         assert_eq!(id, "1");
         assert_eq!(dst, "b");
@@ -522,6 +522,7 @@ mod tests {
         assert_eq!(app.board.columns[1].cards.len(), 1);
         assert_eq!(app.board.columns[1].cards[0].id, "1");
         assert_eq!(app.board.columns[0].cards.len(), 1);
+        Ok(())
     }
 
     #[test]

@@ -143,7 +143,7 @@ pub fn run(cmd: Command, fmt: Format) -> io::Result<()> {
                 .load_board()
                 .map_err(|e| io::Error::other(e.to_string()))?;
             board.apply_project_filter(&project);
-            println!("{}", format::format_board(&board, fmt));
+            println!("{}", format::format_board(&board, fmt).map_err(io::Error::other)?);
         }
         Command::Show { card_id } => {
             let board = prov
@@ -152,7 +152,7 @@ pub fn run(cmd: Command, fmt: Format) -> io::Result<()> {
             let (col, card) = find_card(&board, &card_id)?;
             println!(
                 "{}",
-                format::format_card(card, &col.id, &col.title, fmt)
+                format::format_card(card, &col.id, &col.title, fmt).map_err(io::Error::other)?
             );
         }
         Command::Move {
@@ -170,7 +170,7 @@ pub fn run(cmd: Command, fmt: Format) -> io::Result<()> {
                         ("column_id", &column_id),
                     ],
                     fmt,
-                )
+                ).map_err(io::Error::other)?
             );
         }
         Command::Create {
@@ -205,7 +205,7 @@ pub fn run(cmd: Command, fmt: Format) -> io::Result<()> {
                         ("column_id", &column_id),
                     ],
                     fmt,
-                )
+                ).map_err(io::Error::other)?
             );
         }
         Command::Edit {
@@ -239,7 +239,7 @@ pub fn run(cmd: Command, fmt: Format) -> io::Result<()> {
                 format::format_result(
                     &[("action", "edit"), ("card_id", &card_id)],
                     fmt,
-                )
+                ).map_err(io::Error::other)?
             );
         }
         Command::Delete { card_id } => {
@@ -250,14 +250,14 @@ pub fn run(cmd: Command, fmt: Format) -> io::Result<()> {
                 format::format_result(
                     &[("action", "delete"), ("card_id", &card_id)],
                     fmt,
-                )
+                ).map_err(io::Error::other)?
             );
         }
         Command::Columns => {
             let board = prov
                 .load_board()
                 .map_err(|e| io::Error::other(e.to_string()))?;
-            println!("{}", format::format_columns(&board, fmt));
+            println!("{}", format::format_columns(&board, fmt).map_err(io::Error::other)?);
         }
     }
 
