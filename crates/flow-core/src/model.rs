@@ -106,6 +106,7 @@ pub struct Card {
     pub description: String,
     pub priority: Priority,
     pub assignee: String,
+    pub project: String,
 }
 
 pub struct Column {
@@ -124,15 +125,55 @@ impl Board {
         self.sort_cards_with(SortOrder::Asc);
     }
 
-    /// Sort cards in every column by priority in the given order, then title (ascending).
+    /// Sort cards in every column grouped by project, then by priority in the given order,
+    /// then title (ascending). Cards without a project are placed last.
     pub fn sort_cards_with(&mut self, order: SortOrder) {
         for col in &mut self.columns {
             col.cards.sort_by(|a, b| {
-                let prio_cmp = match order {
-                    SortOrder::Asc => a.priority.sort_key().cmp(&b.priority.sort_key()),
-                    SortOrder::Desc => b.priority.sort_key().cmp(&a.priority.sort_key()),
+                let proj_cmp = match (a.project.is_empty(), b.project.is_empty()) {
+                    (true, true) => std::cmp::Ordering::Equal,
+                    (true, false) => std::cmp::Ordering::Greater,
+                    (false, true) => std::cmp::Ordering::Less,
+                    (false, false) => a.project.to_lowercase().cmp(&b.project.to_lowercase()),
                 };
-                prio_cmp.then_with(|| a.title.to_lowercase().cmp(&b.title.to_lowercase()))
+                proj_cmp
+                    .then_with(|| {
+                        match order {
+                            SortOrder::Asc => a.priority.sort_key().cmp(&b.priority.sort_key()),
+                            SortOrder::Desc => b.priority.sort_key().cmp(&a.priority.sort_key()),
+                        }
+                    })
+                    .then_with(|| a.title.to_lowercase().cmp(&b.title.to_lowercase()))
+            });
+        }
+    }
+
+    /// Return all unique project names across all columns, sorted alphabetically.
+    pub fn projects(&self) -> Vec<String> {
+        let mut set = std::collections::BTreeSet::new();
+        for col in &self.columns {
+            for card in &col.cards {
+                if !card.project.is_empty() {
+                    set.insert(card.project.clone());
+                }
+            }
+        }
+        set.into_iter().collect()
+    }
+
+    /// Filter out cards that don't match the given project filter.
+    /// An empty filter means show all cards.
+    pub fn apply_project_filter(&mut self, filter: &[String]) {
+        if filter.is_empty() {
+            return;
+        }
+        for col in &mut self.columns {
+            col.cards.retain(|card| {
+                if card.project.is_empty() {
+                    filter.iter().any(|f| f.is_empty())
+                } else {
+                    filter.contains(&card.project)
+                }
             });
         }
     }

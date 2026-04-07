@@ -63,7 +63,11 @@ pub struct Cli {
 #[derive(Subcommand)]
 pub enum Command {
     /// List all columns with their cards (id and title per card)
-    List,
+    List {
+        /// Filter by project name (can be repeated for multiple projects)
+        #[arg(long)]
+        project: Vec<String>,
+    },
 
     /// Show full card details: id, title, description, and column
     Show {
@@ -94,6 +98,9 @@ pub enum Command {
         /// Assignee (email or user id)
         #[arg(long)]
         assignee: Option<String>,
+        /// Project name
+        #[arg(long)]
+        project: String,
     },
 
     /// Update a card's title, body, and/or priority
@@ -112,6 +119,9 @@ pub enum Command {
         /// New assignee (email or user id, keeps current if omitted)
         #[arg(long)]
         assignee: Option<String>,
+        /// Project name (keeps current if omitted)
+        #[arg(long)]
+        project: Option<String>,
     },
 
     /// Delete a card permanently
@@ -128,10 +138,11 @@ pub fn run(cmd: Command, fmt: Format) -> io::Result<()> {
     let mut prov = provider::from_env();
 
     match cmd {
-        Command::List => {
-            let board = prov
+        Command::List { project } => {
+            let mut board = prov
                 .load_board()
                 .map_err(|e| io::Error::other(e.to_string()))?;
+            board.apply_project_filter(&project);
             println!("{}", format::format_board(&board, fmt));
         }
         Command::Show { card_id } => {
@@ -168,9 +179,10 @@ pub fn run(cmd: Command, fmt: Format) -> io::Result<()> {
             body,
             priority,
             assignee,
+            project,
         } => {
             let card_id = prov
-                .create_card(&column_id)
+                .create_card(&column_id, &project)
                 .map_err(|e| io::Error::other(e.to_string()))?;
 
             if title.is_some() || body.is_some() || priority.is_some() || assignee.is_some() {
@@ -181,7 +193,7 @@ pub fn run(cmd: Command, fmt: Format) -> io::Result<()> {
                 let b = body.as_deref().unwrap_or("");
                 let p = priority.as_deref().map(Priority::from_str).unwrap_or(Priority::Medium);
                 let a = assignee.as_deref().unwrap_or("");
-                store_fs::write_card_content(&path, t, b, p, a)?;
+                store_fs::write_card_content(&path, t, b, p, a, &project)?;
             }
 
             println!(
@@ -202,10 +214,11 @@ pub fn run(cmd: Command, fmt: Format) -> io::Result<()> {
             body,
             priority,
             assignee,
+            project,
         } => {
-            if title.is_none() && body.is_none() && priority.is_none() && assignee.is_none() {
+            if title.is_none() && body.is_none() && priority.is_none() && assignee.is_none() && project.is_none() {
                 return Err(io::Error::other(
-                    "edit requires at least --title, --body, --priority, or --assignee",
+                    "edit requires at least --title, --body, --priority, --assignee, or --project",
                 ));
             }
 
@@ -213,12 +226,13 @@ pub fn run(cmd: Command, fmt: Format) -> io::Result<()> {
                 .card_path(&card_id)
                 .map_err(|e| io::Error::other(e.to_string()))?;
 
-            let (cur_title, cur_body, cur_priority, cur_assignee) = store_fs::read_card_content(&path)?;
+            let (cur_title, cur_body, cur_priority, cur_assignee, cur_project) = store_fs::read_card_content(&path)?;
             let t = title.as_deref().unwrap_or(&cur_title);
             let b = body.as_deref().unwrap_or(&cur_body);
             let p = priority.as_deref().map(Priority::from_str).unwrap_or(cur_priority);
             let a = assignee.as_deref().unwrap_or(&cur_assignee);
-            store_fs::write_card_content(&path, t, b, p, a)?;
+            let proj = project.as_deref().unwrap_or(&cur_project);
+            store_fs::write_card_content(&path, t, b, p, a, proj)?;
 
             println!(
                 "{}",

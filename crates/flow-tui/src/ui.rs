@@ -21,9 +21,15 @@ fn priority_color(p: Priority) -> Color {
 }
 
 pub fn help_text(app: &App) -> String {
+    let filter_info = if app.project_filter.is_empty() {
+        String::new()
+    } else {
+        format!(" [{}]", app.project_filter.join(","))
+    };
     format!(
-        "h/l or ←/→ focus  j/k or ↑/↓ select  H/L move  a/n new  e edit  d delete  Enter detail  r refresh  s sort({})  / search  Esc close/quit  q quit",
-        app.sort_order.label()
+        "h/l ←/→ focus  j/k ↑/↓ select  H/L move  a/n new  e edit  d del  Enter detail  r refresh  s sort({})  / search  p project{}  Esc/q quit",
+        app.sort_order.label(),
+        filter_info,
     )
 }
 
@@ -48,6 +54,7 @@ pub fn action_from_key(code: KeyCode) -> Option<Action> {
         KeyCode::Char('e') => Action::Edit,
         KeyCode::Char('s') => Action::ToggleSort,
         KeyCode::Char('/') => Action::Search,
+        KeyCode::Char('p') => Action::ProjectFilter,
 
         _ => return None,
     })
@@ -150,6 +157,12 @@ pub fn render(f: &mut Frame, app: &App, render_area: Option<Rect>) {
             Span::raw("Priority: "),
             Span::styled(card.priority.label(), Style::default().fg(priority_color(card.priority))),
         ]));
+        if !card.project.is_empty() {
+            lines.push(Line::from(vec![
+                Span::raw("Project: "),
+                Span::styled(&card.project, Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD)),
+            ]));
+        }
         if !card.assignee.is_empty() {
             lines.push(Line::from(vec![
                 Span::raw("Assignee: "),
@@ -217,12 +230,13 @@ pub fn render(f: &mut Frame, app: &App, render_area: Option<Rect>) {
     }
 
     if let Some(edit) = &app.edit_state {
-        let area = centered(70, 60, f.area());
+        let area = centered(70, 65, f.area());
         f.render_widget(Clear, area);
 
+        let modal_title = if edit.is_new { "New Card" } else { "Edit Card" };
         let block = Block::default()
             .borders(Borders::ALL)
-            .title("Edit Card")
+            .title(modal_title)
             .border_style(Style::default().fg(Color::Cyan));
         let inner_area = block.inner(area);
         f.render_widget(block, area);
@@ -230,20 +244,26 @@ pub fn render(f: &mut Frame, app: &App, render_area: Option<Rect>) {
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
-                Constraint::Length(1),
-                Constraint::Length(3),
-                Constraint::Length(3),
-                Constraint::Length(3),
-                Constraint::Min(1),
-                Constraint::Length(1),
+                Constraint::Length(1),  // 0: card id
+                Constraint::Length(3),  // 1: title
+                Constraint::Length(3),  // 2: project
+                Constraint::Length(3),  // 3: priority
+                Constraint::Length(3),  // 4: assignee
+                Constraint::Min(1),    // 5: description
+                Constraint::Length(1),  // 6: help
             ])
             .split(inner_area);
 
-        f.render_widget(
-            Paragraph::new(Line::from(vec![
+        let header_line = if edit.is_new {
+            Line::from(Span::styled("New card", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)))
+        } else {
+            Line::from(vec![
                 Span::raw("Editing "),
                 Span::styled(&edit.card_id, Style::default().add_modifier(Modifier::BOLD)),
-            ])).alignment(ratatui::layout::Alignment::Center),
+            ])
+        };
+        f.render_widget(
+            Paragraph::new(header_line).alignment(ratatui::layout::Alignment::Center),
             chunks[0],
         );
 
@@ -256,6 +276,18 @@ pub fn render(f: &mut Frame, app: &App, render_area: Option<Rect>) {
             Paragraph::new(edit.title.clone())
                 .block(Block::default().title("Title").borders(Borders::ALL).border_style(title_style)),
             chunks[1],
+        );
+
+        // Project field
+        let project_style = if edit.focus == EditFocus::Project {
+            Style::default().fg(Color::Cyan)
+        } else {
+            Style::default()
+        };
+        f.render_widget(
+            Paragraph::new(edit.project.clone())
+                .block(Block::default().title("Project").borders(Borders::ALL).border_style(project_style)),
+            chunks[2],
         );
 
         // Priority selector
@@ -279,7 +311,7 @@ pub fn render(f: &mut Frame, app: &App, render_area: Option<Rect>) {
         f.render_widget(
             Paragraph::new(Line::from(prio_spans))
                 .block(Block::default().title("Priority").borders(Borders::ALL).border_style(prio_style)),
-            chunks[2],
+            chunks[3],
         );
 
         // Assignee field
@@ -291,7 +323,7 @@ pub fn render(f: &mut Frame, app: &App, render_area: Option<Rect>) {
         f.render_widget(
             Paragraph::new(edit.assignee.clone())
                 .block(Block::default().title("Assignee").borders(Borders::ALL).border_style(assignee_style)),
-            chunks[3],
+            chunks[4],
         );
 
         let desc_style = if edit.focus == EditFocus::Description {
@@ -299,20 +331,20 @@ pub fn render(f: &mut Frame, app: &App, render_area: Option<Rect>) {
         } else {
             Style::default()
         };
-        let inner_width = chunks[4].width.saturating_sub(2) as usize;
+        let inner_width = chunks[5].width.saturating_sub(2) as usize;
         let wrapped_desc = wrap_text(&edit.description, inner_width);
 
         f.render_widget(
             Paragraph::new(wrapped_desc.join("\n"))
                 .block(Block::default().title("Description").borders(Borders::ALL).border_style(desc_style)),
-            chunks[4],
+            chunks[5],
         );
 
         f.render_widget(
             Paragraph::new("Tab: switch field  \u{2190}/\u{2192}: priority  Enter: save  Esc: cancel")
                 .style(Style::default().fg(Color::DarkGray))
                 .alignment(ratatui::layout::Alignment::Center),
-            chunks[5],
+            chunks[6],
         );
 
         // Position cursor
@@ -323,23 +355,58 @@ pub fn render(f: &mut Frame, app: &App, render_area: Option<Rect>) {
                     chunks[1].y + 1,
                 ));
             }
+            EditFocus::Project => {
+                f.set_cursor_position((
+                    chunks[2].x + 1 + edit.cursor_pos as u16,
+                    chunks[2].y + 1,
+                ));
+            }
             EditFocus::Assignee => {
                 f.set_cursor_position((
-                    chunks[3].x + 1 + edit.cursor_pos as u16,
-                    chunks[3].y + 1,
+                    chunks[4].x + 1 + edit.cursor_pos as u16,
+                    chunks[4].y + 1,
                 ));
             }
             EditFocus::Description => {
                 let (x, y) = calculate_visual_cursor_pos(&edit.description, edit.cursor_pos, inner_width);
                 f.set_cursor_position((
-                    chunks[4].x + 1 + x as u16,
-                    chunks[4].y + 1 + y as u16,
+                    chunks[5].x + 1 + x as u16,
+                    chunks[5].y + 1 + y as u16,
                 ));
             }
             EditFocus::Priority => {
                 // No text cursor for priority field
             }
         }
+    }
+
+    // Project filter modal
+    if let Some(pf) = &app.project_filter_state {
+        let area = centered(50, 50, f.area());
+        f.render_widget(Clear, area);
+
+        let mut items: Vec<ListItem> = Vec::new();
+        for (i, proj_name) in pf.projects.iter().enumerate() {
+            let check = if pf.selected[i] { "[x]" } else { "[ ]" };
+            let label = if proj_name.is_empty() { "(sin proyecto)" } else { proj_name.as_str() };
+            items.push(ListItem::new(Line::from(vec![
+                Span::styled(format!("{check} "), Style::default().fg(Color::Cyan)),
+                Span::raw(label),
+            ])));
+        }
+
+        let list = List::new(items)
+            .block(
+                Block::default()
+                    .title("Project Filter")
+                    .borders(Borders::ALL)
+                    .border_style(Style::default().fg(Color::Magenta)),
+            )
+            .highlight_style(Style::default().add_modifier(Modifier::REVERSED));
+
+        let mut state = ListState::default();
+        state.select(Some(pf.cursor));
+        f.render_stateful_widget(list, area, &mut state);
     }
 }
 
@@ -366,10 +433,19 @@ pub fn draw_col(f: &mut Frame, app: &App, idx: usize, rect: Rect) {
             } else {
                 Style::default()
             };
-            ListItem::new(Line::from(vec![
+            let proj_style = if dimmed {
+                Style::default().fg(Color::DarkGray)
+            } else {
+                Style::default().fg(Color::Magenta)
+            };
+            let mut spans = vec![
                 Span::styled(format!("[{}] ", c.priority.short_label()), prio_style),
-                Span::styled(c.title.clone(), title_style),
-            ]))
+            ];
+            if !c.project.is_empty() {
+                spans.push(Span::styled(format!("{} ", c.project), proj_style));
+            }
+            spans.push(Span::styled(c.title.clone(), title_style));
+            ListItem::new(Line::from(spans))
         })
         .collect();
 

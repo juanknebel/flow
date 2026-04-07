@@ -17,7 +17,7 @@ use ratatui::{
 };
 
 use flow_core::{Board, provider, model::Priority};
-use flow_tui::{App, Action, EditState, EditFocus, SearchState, ui::render, ui::action_from_key};
+use flow_tui::{App, Action, EditState, EditFocus, SearchState, ProjectFilterState, ui::render, ui::action_from_key};
 
 fn main() -> io::Result<()> {
     enable_raw_mode()?;
@@ -126,22 +126,56 @@ fn run_tui(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> io::Result<
                                 }
                             }
                             crossterm::event::KeyCode::Enter => {
-                                let card_id = edit.card_id.clone();
+                                if edit.project.trim().is_empty() {
+                                    app.banner = Some("Project is required".to_string());
+                                    continue;
+                                }
+                                let is_new = edit.is_new;
+                                let col_id = edit.col_id.clone();
                                 let title = edit.title.clone();
                                 let description = edit.description.clone();
                                 let priority = edit.priority;
                                 let assignee = edit.assignee.clone();
-                                if let Err(e) = provider.update_card(&card_id, &title, &description, priority, &assignee) {
-                                    app.banner = Some(format!("Save failed: {e}"));
-                                } else {
-                                    match provider.load_board() {
-                                        Ok(mut b) => {
-                                            b.sort_cards_with(app.sort_order);
-                                            app.board = b;
-                                            focus_card_by_id(&mut app, &card_id);
-                                            app.banner = Some("Card saved".to_string());
+                                let project = edit.project.clone();
+
+                                if is_new {
+                                    // Create card on disk with project-based ID
+                                    match provider.create_card(&col_id, &project) {
+                                        Ok(card_id) => {
+                                            if let Err(e) = provider.update_card(&card_id, &title, &description, priority, &assignee, &project) {
+                                                app.banner = Some(format!("Save failed: {e}"));
+                                            } else {
+                                                match provider.load_board() {
+                                                    Ok(mut b) => {
+                                                        b.apply_project_filter(&app.project_filter);
+                                                        b.sort_cards_with(app.sort_order);
+                                                        app.board = b;
+                                                        focus_card_by_id(&mut app, &card_id);
+                                                        app.banner = Some("Card created".to_string());
+                                                    }
+                                                    Err(e) => app.banner = Some(format!("Reload failed: {e}")),
+                                                }
+                                            }
                                         }
-                                        Err(e) => app.banner = Some(format!("Reload failed: {e}")),
+                                        Err(e) => {
+                                            app.banner = Some(format!("Create failed: {e}"));
+                                        }
+                                    }
+                                } else {
+                                    let card_id = edit.card_id.clone();
+                                    if let Err(e) = provider.update_card(&card_id, &title, &description, priority, &assignee, &project) {
+                                        app.banner = Some(format!("Save failed: {e}"));
+                                    } else {
+                                        match provider.load_board() {
+                                            Ok(mut b) => {
+                                                b.apply_project_filter(&app.project_filter);
+                                                b.sort_cards_with(app.sort_order);
+                                                app.board = b;
+                                                focus_card_by_id(&mut app, &card_id);
+                                                app.banner = Some("Card saved".to_string());
+                                            }
+                                            Err(e) => app.banner = Some(format!("Reload failed: {e}")),
+                                        }
                                     }
                                 }
                                 app.edit_state = None;
@@ -217,6 +251,77 @@ fn run_tui(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> io::Result<
                         continue;
                     }
 
+                    if app.project_filter_state.is_some() {
+                        match k.code {
+                            crossterm::event::KeyCode::Esc => {
+                                app.project_filter_state = None;
+                            }
+                            crossterm::event::KeyCode::Enter | crossterm::event::KeyCode::Char(' ') => {
+                                if let Some(pf) = app.project_filter_state.as_mut() {
+                                    if pf.cursor < pf.projects.len() {
+                                        pf.selected[pf.cursor] = !pf.selected[pf.cursor];
+                                    }
+                                }
+                            }
+                            crossterm::event::KeyCode::Down | crossterm::event::KeyCode::Char('j') => {
+                                if let Some(pf) = app.project_filter_state.as_mut() {
+                                    if pf.cursor + 1 < pf.projects.len() {
+                                        pf.cursor += 1;
+                                    }
+                                }
+                            }
+                            crossterm::event::KeyCode::Up | crossterm::event::KeyCode::Char('k') => {
+                                if let Some(pf) = app.project_filter_state.as_mut() {
+                                    if pf.cursor > 0 {
+                                        pf.cursor -= 1;
+                                    }
+                                }
+                            }
+                            crossterm::event::KeyCode::Char('a') => {
+                                // Toggle all
+                                if let Some(pf) = app.project_filter_state.as_mut() {
+                                    let all_selected = pf.selected.iter().all(|&s| s);
+                                    for s in pf.selected.iter_mut() {
+                                        *s = !all_selected;
+                                    }
+                                }
+                            }
+                            crossterm::event::KeyCode::Tab => {
+                                // Apply filter and close
+                                if let Some(pf) = app.project_filter_state.take() {
+                                    let selected: Vec<String> = pf.projects.iter()
+                                        .zip(pf.selected.iter())
+                                        .filter(|(_, sel)| **sel)
+                                        .map(|(name, _)| name.clone())
+                                        .collect();
+                                    let all_selected = selected.len() == pf.projects.len();
+                                    if all_selected || selected.is_empty() {
+                                        app.project_filter = Vec::new();
+                                    } else {
+                                        app.project_filter = selected;
+                                    }
+                                    // Reload board with filter
+                                    match provider.load_board() {
+                                        Ok(mut b) => {
+                                            b.apply_project_filter(&app.project_filter);
+                                            b.sort_cards_with(app.sort_order);
+                                            app.board = b;
+                                            app.clamp();
+                                            if app.project_filter.is_empty() {
+                                                app.banner = Some("Project filter: all".to_string());
+                                            } else {
+                                                app.banner = Some(format!("Project filter: {}", app.project_filter.join(", ")));
+                                            }
+                                        }
+                                        Err(e) => app.banner = Some(format!("Reload failed: {e}")),
+                                    }
+                                }
+                            }
+                            _ => {}
+                        }
+                        continue;
+                    }
+
                     if app.confirm_delete {
                         match k.code {
                             crossterm::event::KeyCode::Char('y') | crossterm::event::KeyCode::Char('Y') => {
@@ -266,22 +371,18 @@ fn run_tui(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> io::Result<
                                     app.banner = Some("Create failed: no column selected".to_string());
                                     continue;
                                 };
-                                match provider.create_card(&col.id) {
-                                    Ok(id) => {
-                                        app.edit_state = Some(EditState {
-                                            card_id: id,
-                                            title: "New card".to_string(),
-                                            description: "".to_string(),
-                                            priority: Priority::Medium,
-                                            assignee: String::new(),
-                                            cursor_pos: 8,
-                                            focus: EditFocus::Title,
-                                        });
-                                    }
-                                    Err(e) => {
-                                        app.banner = Some(format!("Create failed: {e}"));
-                                    }
-                                }
+                                app.edit_state = Some(EditState {
+                                    card_id: String::new(),
+                                    col_id: col.id.clone(),
+                                    is_new: true,
+                                    title: "New card".to_string(),
+                                    description: String::new(),
+                                    priority: Priority::Medium,
+                                    assignee: String::new(),
+                                    project: String::new(),
+                                    cursor_pos: 8,
+                                    focus: EditFocus::Title,
+                                });
                             }
                             Action::Delete => {
                                 if !app.board.columns.is_empty() && !app.board.columns[app.col].cards.is_empty() {
@@ -290,6 +391,30 @@ fn run_tui(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> io::Result<
                             }
                             Action::Search => {
                                 app.search_state = Some(SearchState::new());
+                            }
+                            Action::ProjectFilter => {
+                                // Collect all unique projects from the full board
+                                let mut all_projects = match provider.load_board() {
+                                    Ok(b) => b.projects(),
+                                    Err(_) => app.board.projects(),
+                                };
+                                // Check if any card has no project
+                                let has_unassigned = app.board.columns.iter().any(|c| c.cards.iter().any(|card| card.project.is_empty()));
+                                if has_unassigned {
+                                    all_projects.push(String::new()); // Empty = unassigned
+                                }
+                                if all_projects.is_empty() {
+                                    app.banner = Some("No projects found".to_string());
+                                } else {
+                                    let selected: Vec<bool> = all_projects.iter().map(|p| {
+                                        app.project_filter.is_empty() || app.project_filter.contains(p)
+                                    }).collect();
+                                    app.project_filter_state = Some(ProjectFilterState {
+                                        projects: all_projects,
+                                        selected,
+                                        cursor: 0,
+                                    });
+                                }
                             }
                             Action::Edit => {
                                 if quitting {
@@ -302,10 +427,13 @@ fn run_tui(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> io::Result<
                                 };
                                 app.edit_state = Some(EditState {
                                     card_id: card.id.clone(),
+                                    col_id: col.id.clone(),
+                                    is_new: false,
                                     title: card.title.clone(),
                                     description: card.description.clone(),
                                     priority: card.priority,
                                     assignee: card.assignee.clone(),
+                                    project: card.project.clone(),
                                     cursor_pos: card.title.len(),
                                     focus: EditFocus::Title,
                                 });
@@ -352,6 +480,7 @@ fn run_tui(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> io::Result<
                                 }
                                 match provider.load_board() {
                                     Ok(mut b) => {
+                                        b.apply_project_filter(&app.project_filter);
                                         b.sort_cards_with(app.sort_order);
                                         app.board = b;
                                         app.focus_first_non_empty();

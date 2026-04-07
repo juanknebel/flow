@@ -56,8 +56,8 @@ impl Provider for LocalProvider {
             .map_err(|e| map_move_err(card_id, &self.root, e))
     }
 
-    fn create_card(&mut self, to_col_id: &str) -> Result<String, ProviderError> {
-        store_fs::create_card(&self.root, to_col_id).map_err(|err| ProviderError::Io {
+    fn create_card(&mut self, to_col_id: &str, project: &str) -> Result<String, ProviderError> {
+        store_fs::create_card(&self.root, to_col_id, project).map_err(|err| ProviderError::Io {
             op: "create_card".to_string(),
             path: self.root.clone(),
             source: err,
@@ -90,9 +90,9 @@ impl Provider for LocalProvider {
         })
     }
 
-    fn update_card(&mut self, card_id: &str, title: &str, description: &str, priority: Priority, assignee: &str) -> Result<(), ProviderError> {
+    fn update_card(&mut self, card_id: &str, title: &str, description: &str, priority: Priority, assignee: &str, project: &str) -> Result<(), ProviderError> {
         let path = self.card_path(card_id)?;
-        store_fs::write_card_content(&path, title, description, priority, assignee).map_err(|err| ProviderError::Io {
+        store_fs::write_card_content(&path, title, description, priority, assignee, project).map_err(|err| ProviderError::Io {
             op: "update_card".to_string(),
             path,
             source: err,

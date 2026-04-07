@@ -42,7 +42,7 @@ pub trait Provider {
     fn load_board(&mut self) -> Result<Board, ProviderError>;
     fn move_card(&mut self, card_id: &str, to_col_id: &str) -> Result<(), ProviderError>;
 
-    fn create_card(&mut self, _to_col_id: &str) -> Result<String, ProviderError> {
+    fn create_card(&mut self, _to_col_id: &str, _project: &str) -> Result<String, ProviderError> {
         Err(ProviderError::Parse {
             msg: "create_card not supported by current provider".to_string(),
         })
@@ -60,7 +60,7 @@ pub trait Provider {
         })
     }
 
-    fn update_card(&mut self, _card_id: &str, _title: &str, _description: &str, _priority: Priority, _assignee: &str) -> Result<(), ProviderError> {
+    fn update_card(&mut self, _card_id: &str, _title: &str, _description: &str, _priority: Priority, _assignee: &str, _project: &str) -> Result<(), ProviderError> {
         Err(ProviderError::Parse {
             msg: "update_card not supported by current provider".to_string(),
         })

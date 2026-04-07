@@ -17,6 +17,7 @@ pub enum Action {
     Edit,
     ToggleSort,
     Search,
+    ProjectFilter,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -25,12 +26,14 @@ pub enum EditFocus {
     Description,
     Priority,
     Assignee,
+    Project,
 }
 
 impl EditFocus {
     pub fn next(self) -> Self {
         match self {
-            EditFocus::Title => EditFocus::Priority,
+            EditFocus::Title => EditFocus::Project,
+            EditFocus::Project => EditFocus::Priority,
             EditFocus::Priority => EditFocus::Assignee,
             EditFocus::Assignee => EditFocus::Description,
             EditFocus::Description => EditFocus::Title,
@@ -40,10 +43,13 @@ impl EditFocus {
 
 pub struct EditState {
     pub card_id: String,
+    pub col_id: String,
+    pub is_new: bool,
     pub title: String,
     pub description: String,
     pub priority: Priority,
     pub assignee: String,
+    pub project: String,
     pub cursor_pos: usize,
     pub focus: EditFocus,
 }
@@ -54,6 +60,7 @@ impl EditState {
             EditFocus::Title => &self.title,
             EditFocus::Description => &self.description,
             EditFocus::Assignee => &self.assignee,
+            EditFocus::Project => &self.project,
             EditFocus::Priority => "",
         }
     }
@@ -63,6 +70,7 @@ impl EditState {
             EditFocus::Title => &mut self.title,
             EditFocus::Description => &mut self.description,
             EditFocus::Assignee => &mut self.assignee,
+            EditFocus::Project => &mut self.project,
             EditFocus::Priority => &mut self.title, // unused for priority, but must return something
         }
     }
@@ -177,6 +185,15 @@ impl SearchState {
     }
 }
 
+pub struct ProjectFilterState {
+    /// All available project names (sorted). Empty string means "unassigned".
+    pub projects: Vec<String>,
+    /// Selection state per project (parallel to `projects`).
+    pub selected: Vec<bool>,
+    /// Cursor position in the filter modal.
+    pub cursor: usize,
+}
+
 pub struct App {
     pub board: Board,
     pub col: usize,
@@ -185,6 +202,9 @@ pub struct App {
     pub confirm_delete: bool,
     pub edit_state: Option<EditState>,
     pub search_state: Option<SearchState>,
+    pub project_filter_state: Option<ProjectFilterState>,
+    /// Active project filter: empty = show all, otherwise only these projects.
+    pub project_filter: Vec<String>,
     pub banner: Option<String>,
     pub sort_order: SortOrder,
 }
@@ -199,6 +219,8 @@ impl App {
             confirm_delete: false,
             edit_state: None,
             search_state: None,
+            project_filter_state: None,
+            project_filter: Vec::new(),
             banner: None,
             sort_order: SortOrder::default(),
         }
@@ -297,6 +319,8 @@ impl App {
             Action::CloseOrQuit => {
                 if self.edit_state.is_some() {
                     self.edit_state = None;
+                } else if self.project_filter_state.is_some() {
+                    self.project_filter_state = None;
                 } else if self.search_state.is_some() {
                     self.search_state = None;
                 } else if self.confirm_delete {
@@ -321,7 +345,7 @@ impl App {
                 self.sort_order = self.sort_order.toggle();
                 self.board.sort_cards_with(self.sort_order);
             }
-            Action::Refresh | Action::MoveLeft | Action::MoveRight | Action::Add | Action::Edit | Action::Search => {}
+            Action::Refresh | Action::MoveLeft | Action::MoveRight | Action::Add | Action::Edit | Action::Search | Action::ProjectFilter => {}
         }
         false
     }
@@ -426,6 +450,7 @@ mod tests {
             description: "d".into(),
             priority: Priority::Medium,
             assignee: String::new(),
+            project: String::new(),
         }
     }
 
@@ -547,7 +572,8 @@ mod tests {
 
     #[test]
     fn edit_focus_cycles() {
-        assert_eq!(EditFocus::Title.next(), EditFocus::Priority);
+        assert_eq!(EditFocus::Title.next(), EditFocus::Project);
+        assert_eq!(EditFocus::Project.next(), EditFocus::Priority);
         assert_eq!(EditFocus::Priority.next(), EditFocus::Assignee);
         assert_eq!(EditFocus::Assignee.next(), EditFocus::Description);
         assert_eq!(EditFocus::Description.next(), EditFocus::Title);
@@ -560,6 +586,7 @@ mod tests {
             description: desc.into(),
             priority: Priority::Medium,
             assignee: String::new(),
+            project: String::new(),
         }
     }
 

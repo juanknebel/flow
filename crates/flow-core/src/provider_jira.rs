@@ -243,6 +243,7 @@ impl Provider for JiraProvider {
                 description: desc,
                 priority: Priority::Medium,
                 assignee,
+                project: String::new(),
             });
         }
 
