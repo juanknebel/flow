@@ -19,7 +19,11 @@ Each subcommand performs an action and prints the result to stdout.
 BOARD MODEL:
   A board has ordered columns. Each column has an id, a title, and cards.
   Each card has an id (e.g. FLOW-1), a title, an optional description,
-  and a priority (LOW, MEDIUM, HIGH, BUG, WISHLIST).
+  a priority (LOW, MEDIUM, HIGH, BUG, WISHLIST), and zero or more
+  dependencies (--depends-on) pointing at other cards' ids. Every id in
+  --depends-on must already exist on the board, a card can't depend on
+  itself, and dependencies can't form a cycle (direct or transitive). A
+  card can't be deleted while other cards still depend on it.
   Cards live in exactly one column and can be moved between them.
 
 TYPICAL WORKFLOW:
@@ -49,6 +53,9 @@ EXAMPLES:
   flow-cli show FLOW-1
   flow-cli create todo \"Fix login bug\" --body \"Users report 500 on /login\" --priority high
   flow-cli edit FLOW-1 --title \"Updated title\" --priority bug
+  flow-cli edit FLOW-5 --depends-on FLOW-1,FLOW-2      # comma-separated
+  flow-cli edit FLOW-5 --depends-on FLOW-1 --depends-on FLOW-2  # repeated flag
+  flow-cli edit FLOW-5 --depends-on \"\"                  # clear all dependencies
   flow-cli move FLOW-1 done"
 )]
 pub struct Cli {
@@ -101,6 +108,11 @@ pub enum Command {
         /// Project name
         #[arg(long)]
         project: String,
+        /// Ids of cards this one depends on. Each must already exist on the
+        /// board. Accepts a comma-separated list and/or can be repeated:
+        /// `--depends-on A,B` and `--depends-on A --depends-on B` both work.
+        #[arg(long, value_delimiter = ',')]
+        depends_on: Option<Vec<String>>,
     },
 
     /// Update a card's title, body, and/or priority
@@ -122,6 +134,13 @@ pub enum Command {
         /// Project name (keeps current if omitted)
         #[arg(long)]
         project: Option<String>,
+        /// Ids of cards this one depends on (keeps current list if omitted).
+        /// Each must already exist on the board. Accepts a comma-separated
+        /// list and/or can be repeated: `--depends-on A,B` and
+        /// `--depends-on A --depends-on B` both work. Pass an empty string
+        /// to clear all dependencies.
+        #[arg(long, value_delimiter = ',')]
+        depends_on: Option<Vec<String>>,
     },
 
     /// Delete a card permanently
@@ -180,20 +199,20 @@ pub fn run(cmd: Command, fmt: Format) -> io::Result<()> {
             priority,
             assignee,
             project,
+            depends_on,
         } => {
             let card_id = prov
                 .create_card(&column_id, &project)
                 .map_err(|e| io::Error::other(e.to_string()))?;
 
-            if title.is_some() || body.is_some() || priority.is_some() || assignee.is_some() {
-                let path = prov
-                    .card_path(&card_id)
-                    .map_err(|e| io::Error::other(e.to_string()))?;
+            if title.is_some() || body.is_some() || priority.is_some() || assignee.is_some() || depends_on.is_some() {
                 let t = title.as_deref().unwrap_or("New card");
                 let b = body.as_deref().unwrap_or("");
                 let p = priority.as_deref().map(Priority::from_str).unwrap_or(Priority::Medium);
                 let a = assignee.as_deref().unwrap_or("");
-                store_fs::write_card_content(&path, t, b, p, a, &project)?;
+                let d = depends_on.unwrap_or_default();
+                prov.update_card(&card_id, t, b, p, a, &project, &d)
+                    .map_err(|e| io::Error::other(e.to_string()))?;
             }
 
             println!(
@@ -215,10 +234,11 @@ pub fn run(cmd: Command, fmt: Format) -> io::Result<()> {
             priority,
             assignee,
             project,
+            depends_on,
         } => {
-            if title.is_none() && body.is_none() && priority.is_none() && assignee.is_none() && project.is_none() {
+            if title.is_none() && body.is_none() && priority.is_none() && assignee.is_none() && project.is_none() && depends_on.is_none() {
                 return Err(io::Error::other(
-                    "edit requires at least --title, --body, --priority, --assignee, or --project",
+                    "edit requires at least --title, --body, --priority, --assignee, --project, or --depends-on",
                 ));
             }
 
@@ -226,13 +246,15 @@ pub fn run(cmd: Command, fmt: Format) -> io::Result<()> {
                 .card_path(&card_id)
                 .map_err(|e| io::Error::other(e.to_string()))?;
 
-            let (cur_title, cur_body, cur_priority, cur_assignee, cur_project) = store_fs::read_card_content(&path)?;
+            let (cur_title, cur_body, cur_priority, cur_assignee, cur_project, cur_depends_on) = store_fs::read_card_content(&path)?;
             let t = title.as_deref().unwrap_or(&cur_title);
             let b = body.as_deref().unwrap_or(&cur_body);
             let p = priority.as_deref().map(Priority::from_str).unwrap_or(cur_priority);
             let a = assignee.as_deref().unwrap_or(&cur_assignee);
             let proj = project.as_deref().unwrap_or(&cur_project);
-            store_fs::write_card_content(&path, t, b, p, a, proj)?;
+            let d = depends_on.unwrap_or(cur_depends_on);
+            prov.update_card(&card_id, t, b, p, a, proj, &d)
+                .map_err(|e| io::Error::other(e.to_string()))?;
 
             println!(
                 "{}",

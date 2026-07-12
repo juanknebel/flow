@@ -48,7 +48,7 @@ fn load_cards(root: &Path, col_id: &str) -> io::Result<Vec<Card>> {
 
     for id in order.lines().map(str::trim).filter(|l| !l.is_empty()) {
         let raw = fs::read_to_string(dir.join(format!("{id}.md")))?;
-        let (title, desc, priority, assignee, project) = parse_md(&raw, id);
+        let (title, desc, priority, assignee, project, depends_on) = parse_md(&raw, id);
         cards.push(Card {
             id: id.to_string(),
             title,
@@ -56,24 +56,31 @@ fn load_cards(root: &Path, col_id: &str) -> io::Result<Vec<Card>> {
             priority,
             assignee,
             project,
+            depends_on,
         });
     }
 
     Ok(cards)
 }
 
-pub fn read_card_content(path: &Path) -> io::Result<(String, String, Priority, String, String)> {
+pub fn read_card_content(path: &Path) -> io::Result<(String, String, Priority, String, String, Vec<String>)> {
     let raw = fs::read_to_string(path)?;
     Ok(parse_md(&raw, ""))
 }
 
-pub fn write_card_content(path: &Path, title: &str, body: &str, priority: Priority, assignee: &str, project: &str) -> io::Result<()> {
+pub fn write_card_content(path: &Path, title: &str, body: &str, priority: Priority, assignee: &str, project: &str, depends_on: &[String]) -> io::Result<()> {
     let mut content = format!("---\npriority: {}\n", priority.label());
     if !assignee.is_empty() {
         content.push_str(&format!("assignee: {assignee}\n"));
     }
     if !project.is_empty() {
         content.push_str(&format!("project: {project}\n"));
+    }
+    if !depends_on.is_empty() {
+        // Comma-separated: simplest representation that stays human-editable
+        // in the frontmatter. A single-element list is indistinguishable
+        // from (and parses the same as) the old single-value format.
+        content.push_str(&format!("depends_on: {}\n", depends_on.join(", ")));
     }
     content.push_str(&format!("---\n# {title}\n"));
     if !body.is_empty() {
@@ -86,10 +93,11 @@ pub fn write_card_content(path: &Path, title: &str, body: &str, priority: Priori
     fs::write(path, content)
 }
 
-fn parse_md(raw: &str, fallback: &str) -> (String, String, Priority, String, String) {
+fn parse_md(raw: &str, fallback: &str) -> (String, String, Priority, String, String, Vec<String>) {
     let mut priority = Priority::Medium;
     let mut assignee = String::new();
     let mut project = String::new();
+    let mut depends_on: Vec<String> = Vec::new();
     let content;
 
     // Check for frontmatter
@@ -106,6 +114,16 @@ fn parse_md(raw: &str, fallback: &str) -> (String, String, Priority, String, Str
                     assignee = val.trim().to_string();
                 } else if let Some(val) = line.strip_prefix("project:") {
                     project = val.trim().to_string();
+                } else if let Some(val) = line.strip_prefix("depends_on:") {
+                    // Comma-separated list. The old single-value format
+                    // (`depends_on: FLOW-1`) has no comma and parses here
+                    // as a one-element list, so it stays backward compatible.
+                    depends_on = val
+                        .split(',')
+                        .map(str::trim)
+                        .filter(|s| !s.is_empty())
+                        .map(|s| s.to_string())
+                        .collect();
                 }
             }
             // Content starts after closing --- and its newline
@@ -136,7 +154,7 @@ fn parse_md(raw: &str, fallback: &str) -> (String, String, Priority, String, Str
     let title = if title.is_empty() { fallback } else { title };
 
     let rest = content[first.len()..].trim().to_string();
-    (title.to_string(), rest, priority, assignee, project)
+    (title.to_string(), rest, priority, assignee, project, depends_on)
 }
 
 pub fn move_card(root: &Path, card_id: &str, to_col_id: &str) -> io::Result<()> {
@@ -169,7 +187,7 @@ pub fn create_card(root: &Path, to_col_id: &str, project: &str) -> io::Result<St
     let dir = root.join("cols").join(to_col_id);
     fs::create_dir_all(&dir)?;
     let path = dir.join(format!("{id}.md"));
-    write_card_content(&path, "New card", "", Priority::Medium, "", project)?;
+    write_card_content(&path, "New card", "", Priority::Medium, "", project, &[])?;
     order_append(&dir.join("order.txt"), &id)?;
     Ok(id)
 }
@@ -365,14 +383,15 @@ mod tests {
         fs::create_dir_all(&root)?;
         let path = root.join("CARD.md");
 
-        write_card_content(&path, "My Title", "Body text", Priority::High, "user@test.com", "ProjectX")?;
+        write_card_content(&path, "My Title", "Body text", Priority::High, "user@test.com", "ProjectX", &["DEP-1".to_string(), "DEP-2".to_string()])?;
 
-        let (title, body, priority, assignee, project) = read_card_content(&path)?;
+        let (title, body, priority, assignee, project, depends_on) = read_card_content(&path)?;
         assert_eq!(title, "My Title");
         assert_eq!(body, "Body text");
         assert_eq!(priority, Priority::High);
         assert_eq!(assignee, "user@test.com");
         assert_eq!(project, "ProjectX");
+        assert_eq!(depends_on, vec!["DEP-1".to_string(), "DEP-2".to_string()]);
 
         fs::remove_dir_all(root)?;
         Ok(())
@@ -384,14 +403,15 @@ mod tests {
         fs::create_dir_all(&root)?;
         let path = root.join("CARD.md");
 
-        write_card_content(&path, "Title Only", "", Priority::Low, "", "")?;
+        write_card_content(&path, "Title Only", "", Priority::Low, "", "", &[])?;
 
-        let (title, body, priority, assignee, project) = read_card_content(&path)?;
+        let (title, body, priority, assignee, project, depends_on) = read_card_content(&path)?;
         assert_eq!(title, "Title Only");
         assert!(body.is_empty());
         assert_eq!(priority, Priority::Low);
         assert!(assignee.is_empty());
         assert!(project.is_empty());
+        assert!(depends_on.is_empty());
 
         fs::remove_dir_all(root)?;
         Ok(())
@@ -403,9 +423,9 @@ mod tests {
         fs::create_dir_all(&root)?;
         let path = root.join("CARD.md");
 
-        write_card_content(&path, "Title", "Line 1\nLine 2\nLine 3", Priority::Bug, "", "")?;
+        write_card_content(&path, "Title", "Line 1\nLine 2\nLine 3", Priority::Bug, "", "", &[])?;
 
-        let (title, body, priority, _, _) = read_card_content(&path)?;
+        let (title, body, priority, _, _, _) = read_card_content(&path)?;
         assert_eq!(title, "Title");
         assert!(body.contains("Line 1"));
         assert!(body.contains("Line 3"));
@@ -417,23 +437,51 @@ mod tests {
 
     #[test]
     fn parse_md_without_frontmatter_defaults_to_medium() {
-        let (title, body, priority, assignee, project) = parse_md("# Hello\n\nWorld", "fallback");
+        let (title, body, priority, assignee, project, depends_on) = parse_md("# Hello\n\nWorld", "fallback");
         assert_eq!(title, "Hello");
         assert_eq!(body, "World");
         assert_eq!(priority, Priority::Medium);
         assert!(assignee.is_empty());
         assert!(project.is_empty());
+        assert!(depends_on.is_empty());
     }
 
     #[test]
-    fn parse_md_with_frontmatter() {
-        let raw = "---\npriority: HIGH\nassignee: dev@test.com\nproject: MyProject\n---\n# My Card\n\nDescription";
-        let (title, body, priority, assignee, project) = parse_md(raw, "fallback");
+    fn parse_md_with_frontmatter_multiple_deps() {
+        let raw = "---\npriority: HIGH\nassignee: dev@test.com\nproject: MyProject\ndepends_on: DEP-1, DEP-2\n---\n# My Card\n\nDescription";
+        let (title, body, priority, assignee, project, depends_on) = parse_md(raw, "fallback");
         assert_eq!(title, "My Card");
         assert_eq!(body, "Description");
         assert_eq!(priority, Priority::High);
         assert_eq!(assignee, "dev@test.com");
         assert_eq!(project, "MyProject");
+        assert_eq!(depends_on, vec!["DEP-1".to_string(), "DEP-2".to_string()]);
+    }
+
+    #[test]
+    fn parse_md_without_depends_on_defaults_empty() {
+        // Backward compatibility: cards written before this field existed
+        // must still load fine, with an empty depends_on.
+        let raw = "---\npriority: HIGH\n---\n# My Card\n\nDescription";
+        let (_, _, _, _, _, depends_on) = parse_md(raw, "fallback");
+        assert!(depends_on.is_empty());
+    }
+
+    #[test]
+    fn parse_md_with_old_single_value_depends_on_format() {
+        // Cards written before multi-dependency support used a single bare
+        // id (`depends_on: FLOW-1`, no comma). Must still parse as a
+        // one-element list.
+        let raw = "---\npriority: MEDIUM\ndepends_on: FLOW-1\n---\n# My Card\n";
+        let (_, _, _, _, _, depends_on) = parse_md(raw, "fallback");
+        assert_eq!(depends_on, vec!["FLOW-1".to_string()]);
+    }
+
+    #[test]
+    fn parse_md_depends_on_trims_whitespace_and_ignores_empty_entries() {
+        let raw = "---\npriority: MEDIUM\ndepends_on:  A ,, B ,\n---\n# My Card\n";
+        let (_, _, _, _, _, depends_on) = parse_md(raw, "fallback");
+        assert_eq!(depends_on, vec!["A".to_string(), "B".to_string()]);
     }
 
     #[test]
@@ -446,11 +494,11 @@ mod tests {
             "col todo \"TO DO\"\n",
         )?;
         write(&root.join("cols/todo/order.txt"), "A\nB\nC\nD\nE\n")?;
-        write_card_content(&root.join("cols/todo/A.md"), "Zebra", "", Priority::Low, "", "")?;
-        write_card_content(&root.join("cols/todo/B.md"), "Alpha", "", Priority::High, "", "")?;
-        write_card_content(&root.join("cols/todo/C.md"), "Beta", "", Priority::High, "", "")?;
-        write_card_content(&root.join("cols/todo/D.md"), "Crash", "", Priority::Bug, "", "")?;
-        write_card_content(&root.join("cols/todo/E.md"), "Nice to have", "", Priority::Wishlist, "", "")?;
+        write_card_content(&root.join("cols/todo/A.md"), "Zebra", "", Priority::Low, "", "", &[])?;
+        write_card_content(&root.join("cols/todo/B.md"), "Alpha", "", Priority::High, "", "", &[])?;
+        write_card_content(&root.join("cols/todo/C.md"), "Beta", "", Priority::High, "", "", &[])?;
+        write_card_content(&root.join("cols/todo/D.md"), "Crash", "", Priority::Bug, "", "", &[])?;
+        write_card_content(&root.join("cols/todo/E.md"), "Nice to have", "", Priority::Wishlist, "", "", &[])?;
 
         let b = load_board(&root)?;
         let titles: Vec<&str> = b.columns[0].cards.iter().map(|c| c.title.as_str()).collect();
@@ -467,8 +515,8 @@ mod tests {
         let path = root.join("CARD.md");
 
         for p in [Priority::Low, Priority::Medium, Priority::High, Priority::Bug, Priority::Wishlist] {
-            write_card_content(&path, "Test", "Body", p, "", "")?;
-            let (_, _, got, _, _) = read_card_content(&path)?;
+            write_card_content(&path, "Test", "Body", p, "", "", &[])?;
+            let (_, _, got, _, _, _) = read_card_content(&path)?;
             assert_eq!(got, p, "roundtrip failed for {:?}", p);
         }
 

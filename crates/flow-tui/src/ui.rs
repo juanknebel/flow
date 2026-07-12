@@ -169,6 +169,12 @@ pub fn render(f: &mut Frame, app: &App, render_area: Option<Rect>) {
                 Span::styled(&card.assignee, Style::default().add_modifier(Modifier::BOLD)),
             ]));
         }
+        if !card.depends_on.is_empty() {
+            lines.push(Line::from(vec![
+                Span::raw("Depends on: "),
+                Span::styled(card.depends_on.join(", "), Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+            ]));
+        }
         lines.push(Line::from(""));
         lines.push(Line::from(card.title.clone()));
         lines.push(Line::from(""));
@@ -247,10 +253,11 @@ pub fn render(f: &mut Frame, app: &App, render_area: Option<Rect>) {
                 Constraint::Length(1),  // 0: card id
                 Constraint::Length(3),  // 1: title
                 Constraint::Length(3),  // 2: project
-                Constraint::Length(3),  // 3: priority
-                Constraint::Length(3),  // 4: assignee
-                Constraint::Min(1),    // 5: description
-                Constraint::Length(1),  // 6: help
+                Constraint::Length(3),  // 3: depends on
+                Constraint::Length(3),  // 4: priority
+                Constraint::Length(3),  // 5: assignee
+                Constraint::Min(1),    // 6: description
+                Constraint::Length(1),  // 7: help
             ])
             .split(inner_area);
 
@@ -290,6 +297,18 @@ pub fn render(f: &mut Frame, app: &App, render_area: Option<Rect>) {
             chunks[2],
         );
 
+        // Depends On field
+        let depends_on_style = if edit.focus == EditFocus::DependsOn {
+            Style::default().fg(Color::Cyan)
+        } else {
+            Style::default()
+        };
+        f.render_widget(
+            Paragraph::new(edit.depends_on.clone())
+                .block(Block::default().title("Depends On").borders(Borders::ALL).border_style(depends_on_style)),
+            chunks[3],
+        );
+
         // Priority selector
         let prio_style = if edit.focus == EditFocus::Priority {
             Style::default().fg(Color::Cyan)
@@ -311,7 +330,7 @@ pub fn render(f: &mut Frame, app: &App, render_area: Option<Rect>) {
         f.render_widget(
             Paragraph::new(Line::from(prio_spans))
                 .block(Block::default().title("Priority").borders(Borders::ALL).border_style(prio_style)),
-            chunks[3],
+            chunks[4],
         );
 
         // Assignee field
@@ -323,7 +342,7 @@ pub fn render(f: &mut Frame, app: &App, render_area: Option<Rect>) {
         f.render_widget(
             Paragraph::new(edit.assignee.clone())
                 .block(Block::default().title("Assignee").borders(Borders::ALL).border_style(assignee_style)),
-            chunks[4],
+            chunks[5],
         );
 
         let desc_style = if edit.focus == EditFocus::Description {
@@ -331,20 +350,20 @@ pub fn render(f: &mut Frame, app: &App, render_area: Option<Rect>) {
         } else {
             Style::default()
         };
-        let inner_width = chunks[5].width.saturating_sub(2) as usize;
+        let inner_width = chunks[6].width.saturating_sub(2) as usize;
         let wrapped_desc = wrap_text(&edit.description, inner_width);
 
         f.render_widget(
             Paragraph::new(wrapped_desc.join("\n"))
                 .block(Block::default().title("Description").borders(Borders::ALL).border_style(desc_style)),
-            chunks[5],
+            chunks[6],
         );
 
         f.render_widget(
             Paragraph::new("Tab: switch field  \u{2190}/\u{2192}: priority  Enter: save  Esc: cancel")
                 .style(Style::default().fg(Color::DarkGray))
                 .alignment(ratatui::layout::Alignment::Center),
-            chunks[6],
+            chunks[7],
         );
 
         // Position cursor
@@ -361,17 +380,23 @@ pub fn render(f: &mut Frame, app: &App, render_area: Option<Rect>) {
                     chunks[2].y + 1,
                 ));
             }
+            EditFocus::DependsOn => {
+                f.set_cursor_position((
+                    chunks[3].x + 1 + edit.cursor_pos as u16,
+                    chunks[3].y + 1,
+                ));
+            }
             EditFocus::Assignee => {
                 f.set_cursor_position((
-                    chunks[4].x + 1 + edit.cursor_pos as u16,
-                    chunks[4].y + 1,
+                    chunks[5].x + 1 + edit.cursor_pos as u16,
+                    chunks[5].y + 1,
                 ));
             }
             EditFocus::Description => {
                 let (x, y) = calculate_visual_cursor_pos(&edit.description, edit.cursor_pos, inner_width);
                 f.set_cursor_position((
-                    chunks[5].x + 1 + x as u16,
-                    chunks[5].y + 1 + y as u16,
+                    chunks[6].x + 1 + x as u16,
+                    chunks[6].y + 1 + y as u16,
                 ));
             }
             EditFocus::Priority => {
@@ -438,6 +463,11 @@ pub fn draw_col(f: &mut Frame, app: &App, idx: usize, rect: Rect) {
             } else {
                 Style::default().fg(Color::Magenta)
             };
+            let dep_style = if dimmed {
+                Style::default().fg(Color::DarkGray)
+            } else {
+                Style::default().fg(Color::Cyan)
+            };
             let mut spans = vec![
                 Span::styled(format!("[{}] ", c.priority.short_label()), prio_style),
             ];
@@ -445,6 +475,14 @@ pub fn draw_col(f: &mut Frame, app: &App, idx: usize, rect: Rect) {
                 spans.push(Span::styled(format!("{} ", c.project), proj_style));
             }
             spans.push(Span::styled(c.title.clone(), title_style));
+            if !c.depends_on.is_empty() {
+                let label = if c.depends_on.len() == 1 {
+                    format!("  \u{26D3} {}", c.depends_on[0])
+                } else {
+                    format!("  \u{26D3}{}", c.depends_on.len())
+                };
+                spans.push(Span::styled(label, dep_style));
+            }
             ListItem::new(Line::from(spans))
         })
         .collect();

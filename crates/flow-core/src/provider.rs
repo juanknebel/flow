@@ -15,6 +15,11 @@ pub enum ProviderError {
         path: PathBuf,
         source: io::Error,
     },
+    /// A business-rule validation failed (e.g. dependency cycle, or deleting
+    /// a card other cards still depend on).
+    Validation {
+        msg: String,
+    },
 }
 
 impl fmt::Display for ProviderError {
@@ -25,6 +30,7 @@ impl fmt::Display for ProviderError {
             ProviderError::Io { op, path, source } => {
                 write!(f, "{op} failed for {}: {source}", path.display())
             }
+            ProviderError::Validation { msg } => write!(f, "validation error: {msg}"),
         }
     }
 }
@@ -60,7 +66,7 @@ pub trait Provider {
         })
     }
 
-    fn update_card(&mut self, _card_id: &str, _title: &str, _description: &str, _priority: Priority, _assignee: &str, _project: &str) -> Result<(), ProviderError> {
+    fn update_card(&mut self, _card_id: &str, _title: &str, _description: &str, _priority: Priority, _assignee: &str, _project: &str, _depends_on: &[String]) -> Result<(), ProviderError> {
         Err(ProviderError::Parse {
             msg: "update_card not supported by current provider".to_string(),
         })
