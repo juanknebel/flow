@@ -27,6 +27,16 @@ impl LocalProvider {
             };
         }
 
+        // Auto-detect: if a `.board` directory exists in the current working directory, use it!
+        if let Ok(cwd) = std::env::current_dir() {
+            let local_board = cwd.join(".board");
+            if local_board.is_dir() {
+                return Self {
+                    root: local_board,
+                };
+            }
+        }
+
         if std::env::var("FLOW_PROVIDER").ok().as_deref() == Some("local") {
             if let Ok(p) = std::env::var("FLOW_LOCAL_PATH") {
                 return Self {

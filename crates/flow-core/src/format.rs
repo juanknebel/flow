@@ -115,21 +115,38 @@ pub fn format_board(board: &Board, fmt: Format) -> Result<String, serde_json::Er
             format_table(&headers, &rows)
         }
         Format::Markdown => {
-            let mut out = String::new();
+            let mut col_strings = Vec::new();
             for col in &board.columns {
-                out.push_str(&format!("## {} ({})\n", col.title, col.cards.len()));
-                let mut last_project: Option<&str> = None;
-                for card in &col.cards {
-                    let proj = if card.project.is_empty() { "(sin proyecto)" } else { &card.project };
-                    if last_project != Some(proj) {
-                        out.push_str(&format!("### {}\n", proj));
-                        last_project = Some(proj);
+                let mut col_str = String::new();
+                let emoji = match col.id.to_lowercase().as_str() {
+                    "todo" | "to_do" | "to-do" => "📋",
+                    "in_progress" | "inprogress" | "in-progress" | "progress" => "⏳",
+                    "in_review" | "inreview" | "in-review" | "review" => "🔍",
+                    "done" => "✅",
+                    _ => "📦",
+                };
+                col_str.push_str(&format!("### {} {} ({})\n", emoji, col.title, col.cards.len()));
+                if col.cards.is_empty() {
+                    col_str.push_str("* *(No hay tareas en esta columna)*\n");
+                } else {
+                    for card in &col.cards {
+                        let proj_part = if card.project.is_empty() {
+                            String::new()
+                        } else {
+                            format!("**[{}]** ", card.project)
+                        };
+                        col_str.push_str(&format!(
+                            "* {}`{}` [**{}**] - {}\n",
+                            proj_part,
+                            card.id,
+                            card.priority.label(),
+                            card.title
+                        ));
                     }
-                    out.push_str(&format!("- **{}** [{}] {}\n", card.id, card.priority.label(), card.title));
                 }
-                out.push('\n');
+                col_strings.push(col_str);
             }
-            chomp(out)
+            chomp(col_strings.join("\n---\n\n"))
         }
     })
 }
@@ -591,9 +608,10 @@ mod tests {
     #[test]
     fn board_markdown() -> TestResult {
         let out = format_board(&sample_board(), Format::Markdown)?;
-        assert!(out.contains("## To Do (1)"));
-        assert!(out.contains("- **FLOW-1** [MEDIUM] First task"));
-        assert!(out.contains("## Done (0)"));
+        assert!(out.contains("### 📋 To Do (1)"));
+        assert!(out.contains("* `FLOW-1` [**MEDIUM**] - First task"));
+        assert!(out.contains("### ✅ Done (0)"));
+        assert!(out.contains("* *(No hay tareas en esta columna)*"));
         Ok(())
     }
 
