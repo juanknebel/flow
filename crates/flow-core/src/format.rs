@@ -167,8 +167,26 @@ struct CardDetailOut {
     priority: String,
     assignee: String,
     project: String,
+    depends_on: Vec<String>,
     column_id: String,
     column_title: String,
+}
+
+/// Join dependency ids for display in "prose" formats (plain, xml, table,
+/// markdown) where the surrounding syntax already delimits the field, so a
+/// comma-with-space reads naturally and can't be confused with a field
+/// separator.
+fn join_deps(depends_on: &[String]) -> String {
+    depends_on.join(", ")
+}
+
+/// Join dependency ids for CSV. A `;` is used instead of `,` so the joined
+/// value can never be mistaken for a CSV field separator — otherwise a card
+/// with two dependencies would silently shift every column after it. The
+/// result is still passed through `csv_esc`, which will quote it if needed
+/// (e.g. an id itself contains a comma or quote).
+fn join_deps_csv(depends_on: &[String]) -> String {
+    depends_on.join("; ")
 }
 
 pub fn format_card(card: &Card, col_id: &str, col_title: &str, fmt: Format) -> Result<String, serde_json::Error> {
@@ -180,6 +198,9 @@ pub fn format_card(card: &Card, col_id: &str, col_title: &str, fmt: Format) -> R
             }
             if !card.assignee.is_empty() {
                 out.push_str(&format!("assignee: {}\n", card.assignee));
+            }
+            if !card.depends_on.is_empty() {
+                out.push_str(&format!("depends_on: {}\n", join_deps(&card.depends_on)));
             }
             if !card.description.trim().is_empty() {
                 out.push('\n');
@@ -194,17 +215,19 @@ pub fn format_card(card: &Card, col_id: &str, col_title: &str, fmt: Format) -> R
             priority: card.priority.label().to_string(),
             assignee: card.assignee.clone(),
             project: card.project.clone(),
+            depends_on: card.depends_on.clone(),
             column_id: col_id.to_string(),
             column_title: col_title.to_string(),
         })
         ?,
         Format::Xml => {
             let mut out = format!(
-                "<card id=\"{}\" title=\"{}\" priority=\"{}\" project=\"{}\" column_id=\"{}\" column_title=\"{}\">",
+                "<card id=\"{}\" title=\"{}\" priority=\"{}\" project=\"{}\" depends_on=\"{}\" column_id=\"{}\" column_title=\"{}\">",
                 xml_esc(&card.id),
                 xml_esc(&card.title),
                 xml_esc(card.priority.label()),
                 xml_esc(&card.project),
+                xml_esc(&join_deps(&card.depends_on)),
                 xml_esc(col_id),
                 xml_esc(col_title),
             );
@@ -218,15 +241,16 @@ pub fn format_card(card: &Card, col_id: &str, col_title: &str, fmt: Format) -> R
             out
         }
         Format::Csv => {
-            let mut out = String::from("id,title,description,priority,assignee,project,column_id,column_title\n");
+            let mut out = String::from("id,title,description,priority,assignee,project,depends_on,column_id,column_title\n");
             out.push_str(&format!(
-                "{},{},{},{},{},{},{},{}",
+                "{},{},{},{},{},{},{},{},{}",
                 csv_esc(&card.id),
                 csv_esc(&card.title),
                 csv_esc(&card.description),
                 csv_esc(card.priority.label()),
                 csv_esc(&card.assignee),
                 csv_esc(&card.project),
+                csv_esc(&join_deps_csv(&card.depends_on)),
                 csv_esc(col_id),
                 csv_esc(col_title),
             ));
@@ -244,6 +268,9 @@ pub fn format_card(card: &Card, col_id: &str, col_title: &str, fmt: Format) -> R
             if !card.assignee.is_empty() {
                 rows.push(vec!["assignee".to_string(), card.assignee.clone()]);
             }
+            if !card.depends_on.is_empty() {
+                rows.push(vec!["depends_on".to_string(), join_deps(&card.depends_on)]);
+            }
             rows.push(vec!["description".to_string(), card.description.clone()]);
             format_table(&headers, &rows)
         }
@@ -254,6 +281,9 @@ pub fn format_card(card: &Card, col_id: &str, col_title: &str, fmt: Format) -> R
             }
             if !card.assignee.is_empty() {
                 out.push_str(&format!("Assignee: {}\n", card.assignee));
+            }
+            if !card.depends_on.is_empty() {
+                out.push_str(&format!("Depends on: {}\n", join_deps(&card.depends_on)));
             }
             if !card.description.trim().is_empty() {
                 out.push_str(&format!("\n---\n\n{}\n", card.description));
@@ -486,6 +516,7 @@ mod tests {
                         priority: Priority::Medium,
                         assignee: String::new(),
                         project: String::new(),
+                        depends_on: Vec::new(),
                     }],
                 },
                 Column {
@@ -576,6 +607,7 @@ mod tests {
             priority: Priority::High,
             assignee: String::new(),
             project: String::new(),
+            depends_on: Vec::new(),
         }
     }
 
@@ -599,6 +631,7 @@ mod tests {
             priority: Priority::Low,
             assignee: String::new(),
             project: String::new(),
+            depends_on: Vec::new(),
         };
         let out = format_card(&card, "done", "Done", Format::Plain)?;
         assert!(!out.contains("  \n"));
@@ -633,10 +666,106 @@ mod tests {
     fn card_csv_has_header_and_row() -> TestResult {
         let out = format_card(&sample_card(), "todo", "To Do", Format::Csv)?;
         let lines: Vec<&str> = out.lines().collect();
-        assert_eq!(lines[0], "id,title,description,priority,assignee,project,column_id,column_title");
+        assert_eq!(lines[0], "id,title,description,priority,assignee,project,depends_on,column_id,column_title");
         assert!(lines[1].contains("X-1"));
         assert!(lines[1].contains("HIGH"));
         Ok(())
+    }
+
+    #[test]
+    fn card_with_single_dependency_shows_in_all_formats() -> TestResult {
+        let mut card = sample_card();
+        card.depends_on = vec!["X-0".to_string()];
+
+        let plain = format_card(&card, "todo", "To Do", Format::Plain)?;
+        assert!(plain.contains("depends_on: X-0"));
+
+        let json = format_card(&card, "todo", "To Do", Format::Json)?;
+        let v: serde_json::Value = serde_json::from_str(&json)?;
+        assert_eq!(v["depends_on"], serde_json::json!(["X-0"]));
+
+        let xml = format_card(&card, "todo", "To Do", Format::Xml)?;
+        assert!(xml.contains("depends_on=\"X-0\""));
+
+        let csv = format_card(&card, "todo", "To Do", Format::Csv)?;
+        assert!(csv.contains("X-0"));
+
+        let table = format_card(&card, "todo", "To Do", Format::Table)?;
+        assert!(table.contains("depends_on"));
+        assert!(table.contains("X-0"));
+
+        let md = format_card(&card, "todo", "To Do", Format::Markdown)?;
+        assert!(md.contains("Depends on: X-0"));
+
+        Ok(())
+    }
+
+    #[test]
+    fn card_with_multiple_dependencies_shows_in_all_formats() -> TestResult {
+        let mut card = sample_card();
+        card.depends_on = vec!["X-0".to_string(), "X-2".to_string()];
+
+        let plain = format_card(&card, "todo", "To Do", Format::Plain)?;
+        assert!(plain.contains("depends_on: X-0, X-2"));
+
+        let json = format_card(&card, "todo", "To Do", Format::Json)?;
+        let v: serde_json::Value = serde_json::from_str(&json)?;
+        assert_eq!(v["depends_on"], serde_json::json!(["X-0", "X-2"]));
+
+        let xml = format_card(&card, "todo", "To Do", Format::Xml)?;
+        assert!(xml.contains("depends_on=\"X-0, X-2\""));
+
+        let table = format_card(&card, "todo", "To Do", Format::Table)?;
+        assert!(table.contains("X-0, X-2"));
+
+        let md = format_card(&card, "todo", "To Do", Format::Markdown)?;
+        assert!(md.contains("Depends on: X-0, X-2"));
+
+        Ok(())
+    }
+
+    #[test]
+    fn card_csv_dependency_list_does_not_collide_with_csv_delimiter() {
+        let mut card = sample_card();
+        card.depends_on = vec!["X-0".to_string(), "X-2".to_string()];
+
+        let csv = format_card(&card, "todo", "To Do", Format::Csv).expect("csv format");
+        let lines: Vec<&str> = csv.lines().collect();
+        let header_cols = lines[0].split(',').count();
+
+        // A raw comma-joined "X-0,X-2" would silently split into two CSV
+        // fields and shift every column after it. The "; " separator used
+        // for depends_on must keep the row's column count identical to the
+        // header's, whether or not the field ends up quoted.
+        let row_cols = split_csv_row(lines[1]).len();
+        assert_eq!(row_cols, header_cols);
+
+        // The joined value itself must show up intact (not split apart).
+        assert!(csv.contains("X-0; X-2"));
+    }
+
+    /// Minimal CSV row splitter that understands double-quoted fields, used
+    /// only to verify column counts in tests.
+    fn split_csv_row(row: &str) -> Vec<String> {
+        let mut fields = Vec::new();
+        let mut field = String::new();
+        let mut in_quotes = false;
+        let mut chars = row.chars().peekable();
+        while let Some(c) = chars.next() {
+            match c {
+                '"' if in_quotes && chars.peek() == Some(&'"') => {
+                    field.push('"');
+                    chars.next();
+                }
+                '"' => in_quotes = !in_quotes,
+                ',' if !in_quotes => {
+                    fields.push(std::mem::take(&mut field));
+                }
+                other => field.push(other),
+            }
+        }
+        fields.push(field);
+        fields
     }
 
     #[test]

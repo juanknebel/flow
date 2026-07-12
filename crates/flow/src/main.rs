@@ -17,7 +17,11 @@ use ratatui::{
 };
 
 use flow_core::{Board, provider, model::Priority};
-use flow_tui::{App, Action, EditState, EditFocus, SearchState, ProjectFilterState, ui::render, ui::action_from_key};
+use flow_tui::{
+    App, Action, EditState, EditFocus, SearchState, ProjectFilterState,
+    app::{parse_depends_on_field, format_depends_on_field},
+    ui::render, ui::action_from_key,
+};
 
 fn main() -> io::Result<()> {
     enable_raw_mode()?;
@@ -137,12 +141,13 @@ fn run_tui(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> io::Result<
                                 let priority = edit.priority;
                                 let assignee = edit.assignee.clone();
                                 let project = edit.project.clone();
+                                let depends_on = parse_depends_on_field(&edit.depends_on);
 
                                 if is_new {
                                     // Create card on disk with project-based ID
                                     match provider.create_card(&col_id, &project) {
                                         Ok(card_id) => {
-                                            if let Err(e) = provider.update_card(&card_id, &title, &description, priority, &assignee, &project) {
+                                            if let Err(e) = provider.update_card(&card_id, &title, &description, priority, &assignee, &project, &depends_on) {
                                                 app.banner = Some(format!("Save failed: {e}"));
                                             } else {
                                                 match provider.load_board() {
@@ -163,7 +168,7 @@ fn run_tui(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> io::Result<
                                     }
                                 } else {
                                     let card_id = edit.card_id.clone();
-                                    if let Err(e) = provider.update_card(&card_id, &title, &description, priority, &assignee, &project) {
+                                    if let Err(e) = provider.update_card(&card_id, &title, &description, priority, &assignee, &project, &depends_on) {
                                         app.banner = Some(format!("Save failed: {e}"));
                                     } else {
                                         match provider.load_board() {
@@ -384,6 +389,7 @@ fn run_tui(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> io::Result<
                                     priority: Priority::Medium,
                                     assignee: String::new(),
                                     project: String::new(),
+                                    depends_on: String::new(),
                                     cursor_pos: 8,
                                     focus: EditFocus::Title,
                                 });
@@ -438,6 +444,7 @@ fn run_tui(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> io::Result<
                                     priority: card.priority,
                                     assignee: card.assignee.clone(),
                                     project: card.project.clone(),
+                                    depends_on: format_depends_on_field(&card.depends_on),
                                     cursor_pos: card.title.len(),
                                     focus: EditFocus::Title,
                                 });

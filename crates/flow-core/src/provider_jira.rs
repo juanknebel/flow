@@ -245,6 +245,15 @@ impl Provider for JiraProvider {
                     priority: Priority::Medium,
                     assignee,
                     project: String::new(),
+                    // Jira has its own "issue links" concept (blocks/is
+                    // blocked by, relates to, etc.) which doesn't map
+                    // cleanly onto a flat `depends_on` list. Rather than
+                    // guessing which link type(s) to surface, we leave this
+                    // empty for Jira-backed boards; the update_card/
+                    // delete_card default trait impls also reject writes,
+                    // so dependency validation is a local-provider-only
+                    // feature for now.
+                    depends_on: Vec::new(),
                 });
             }
         }

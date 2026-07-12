@@ -27,13 +27,15 @@ pub enum EditFocus {
     Priority,
     Assignee,
     Project,
+    DependsOn,
 }
 
 impl EditFocus {
     pub fn next(self) -> Self {
         match self {
             EditFocus::Title => EditFocus::Project,
-            EditFocus::Project => EditFocus::Priority,
+            EditFocus::Project => EditFocus::DependsOn,
+            EditFocus::DependsOn => EditFocus::Priority,
             EditFocus::Priority => EditFocus::Assignee,
             EditFocus::Assignee => EditFocus::Description,
             EditFocus::Description => EditFocus::Title,
@@ -50,6 +52,7 @@ pub struct EditState {
     pub priority: Priority,
     pub assignee: String,
     pub project: String,
+    pub depends_on: String,
     pub cursor_pos: usize,
     pub focus: EditFocus,
 }
@@ -61,6 +64,7 @@ impl EditState {
             EditFocus::Description => &self.description,
             EditFocus::Assignee => &self.assignee,
             EditFocus::Project => &self.project,
+            EditFocus::DependsOn => &self.depends_on,
             EditFocus::Priority => "",
         }
     }
@@ -71,6 +75,7 @@ impl EditState {
             EditFocus::Description => &mut self.description,
             EditFocus::Assignee => &mut self.assignee,
             EditFocus::Project => &mut self.project,
+            EditFocus::DependsOn => &mut self.depends_on,
             EditFocus::Priority => &mut self.title, // unused for priority, but must return something
         }
     }
@@ -141,6 +146,25 @@ impl EditState {
             self.cursor_pos = text.len();
         }
     }
+}
+
+/// Parse the edit modal's single-line "Depends On" text field (a
+/// comma-separated list of card ids) into a `Vec<String>`, trimming
+/// whitespace and dropping empty entries. De-duplication and existence/cycle
+/// validation happen server-side (`Provider::update_card`); this only
+/// handles the text -> list parsing.
+pub fn parse_depends_on_field(text: &str) -> Vec<String> {
+    text.split(',')
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_string())
+        .collect()
+}
+
+/// Format a card's dependency list back into the edit modal's comma-space
+/// separated text representation.
+pub fn format_depends_on_field(depends_on: &[String]) -> String {
+    depends_on.join(", ")
 }
 
 pub struct SearchState {
@@ -451,6 +475,7 @@ mod tests {
             priority: Priority::Medium,
             assignee: String::new(),
             project: String::new(),
+            depends_on: Vec::new(),
         }
     }
 
@@ -574,7 +599,8 @@ mod tests {
     #[test]
     fn edit_focus_cycles() {
         assert_eq!(EditFocus::Title.next(), EditFocus::Project);
-        assert_eq!(EditFocus::Project.next(), EditFocus::Priority);
+        assert_eq!(EditFocus::Project.next(), EditFocus::DependsOn);
+        assert_eq!(EditFocus::DependsOn.next(), EditFocus::Priority);
         assert_eq!(EditFocus::Priority.next(), EditFocus::Assignee);
         assert_eq!(EditFocus::Assignee.next(), EditFocus::Description);
         assert_eq!(EditFocus::Description.next(), EditFocus::Title);
@@ -588,6 +614,7 @@ mod tests {
             priority: Priority::Medium,
             assignee: String::new(),
             project: String::new(),
+            depends_on: Vec::new(),
         }
     }
 
@@ -680,6 +707,25 @@ mod tests {
 
         assert!(!app.apply(Action::CloseOrQuit));
         assert!(!app.detail_open);
+    }
+
+    #[test]
+    fn parse_depends_on_field_trims_and_drops_empty_entries() {
+        assert_eq!(
+            parse_depends_on_field(" A , B ,,C"),
+            vec!["A".to_string(), "B".to_string(), "C".to_string()]
+        );
+        assert_eq!(parse_depends_on_field(""), Vec::<String>::new());
+        assert_eq!(parse_depends_on_field("   "), Vec::<String>::new());
+    }
+
+    #[test]
+    fn format_depends_on_field_joins_with_comma_space() {
+        assert_eq!(
+            format_depends_on_field(&["A".to_string(), "B".to_string()]),
+            "A, B"
+        );
+        assert_eq!(format_depends_on_field(&[]), "");
     }
 
     #[test]
