@@ -433,6 +433,59 @@ pub fn render(f: &mut Frame, app: &App, render_area: Option<Rect>) {
         state.select(Some(pf.cursor));
         f.render_stateful_widget(list, area, &mut state);
     }
+
+    // Project selector modal (startup, when no tenant was configured)
+    if let Some(ps) = &app.project_select_state {
+        let area = centered(60, 60, f.area());
+        f.render_widget(Clear, area);
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Min(4), Constraint::Length(3), Constraint::Length(1)])
+            .split(area);
+
+        let mut items: Vec<ListItem> = Vec::new();
+        if ps.projects.is_empty() {
+            items.push(ListItem::new(Line::from(Span::styled(
+                "(no projects yet)",
+                Style::default().fg(Color::DarkGray),
+            ))));
+        }
+        for proj in &ps.projects {
+            items.push(ListItem::new(Line::from(Span::raw(proj.as_str()))));
+        }
+        let list = List::new(items)
+            .block(
+                Block::default()
+                    .title("Select project")
+                    .borders(Borders::ALL)
+                    .border_style(Style::default().fg(if ps.input_mode { Color::Gray } else { Color::Cyan })),
+            )
+            .highlight_style(Style::default().add_modifier(Modifier::REVERSED));
+        let mut state = ListState::default();
+        state.select(if ps.projects.is_empty() { None } else { Some(ps.cursor) });
+        f.render_stateful_widget(list, chunks[0], &mut state);
+
+        let input = Paragraph::new(ps.input.as_str()).block(
+            Block::default()
+                .title("New project (n)")
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(if ps.input_mode { Color::Cyan } else { Color::Gray })),
+        );
+        f.render_widget(input, chunks[1]);
+        if ps.input_mode {
+            f.set_cursor_position((chunks[1].x + 1 + ps.cursor_pos as u16, chunks[1].y + 1));
+        }
+
+        let hints = if ps.input_mode {
+            "Enter create  Esc back to list"
+        } else {
+            "j/k move  Enter open  n new  Esc/q quit"
+        };
+        f.render_widget(
+            Paragraph::new(Span::styled(hints, Style::default().fg(Color::DarkGray))),
+            chunks[2],
+        );
+    }
 }
 
 pub fn draw_col(f: &mut Frame, app: &App, idx: usize, rect: Rect) {

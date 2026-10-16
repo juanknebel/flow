@@ -9,23 +9,46 @@ use crate::{
 pub struct LocalProvider {
     db_path: PathBuf,
     project: String,
+    project_explicit: bool,
 }
 
 impl LocalProvider {
     pub fn new(db_path: PathBuf, project: String) -> Self {
-        Self { db_path, project }
+        Self {
+            db_path,
+            project,
+            project_explicit: true,
+        }
     }
 
     pub fn from_env() -> Self {
-        let project = std::env::var("FLOW_PROJECT")
-            .ok()
-            .map(|s| s.trim().to_string())
-            .filter(|s| !s.is_empty())
-            .unwrap_or_else(|| "default".to_string());
+        let (project, explicit) = resolve_project(std::env::var("FLOW_PROJECT").ok().as_deref());
         Self {
             db_path: resolve_db_path(),
             project,
+            project_explicit: explicit,
         }
+    }
+
+    /// Explicit tenant (CLI `--project` flag, TUI background moves).
+    /// The database path still resolves from `FLOW_BOARD_PATH` or the default.
+    /// Callers must pass a non-empty code.
+    pub fn with_project(project: String) -> Self {
+        debug_assert!(!project.trim().is_empty(), "tenant code must not be empty");
+        Self {
+            db_path: resolve_db_path(),
+            project: project.trim().to_string(),
+            project_explicit: true,
+        }
+    }
+}
+
+/// Tenant from configuration: the `FLOW_PROJECT` value when set and non-empty,
+/// otherwise the `default` tenant flagged as needing interactive selection.
+fn resolve_project(var: Option<&str>) -> (String, bool) {
+    match var.map(str::trim).filter(|s| !s.is_empty()) {
+        Some(code) => (code.to_string(), true),
+        None => ("default".to_string(), false),
     }
 }
 
@@ -76,6 +99,30 @@ impl Provider for LocalProvider {
     fn move_card(&mut self, card_id: &str, to_col_id: &str) -> Result<(), ProviderError> {
         store_db::move_card(&self.db_path, &self.project, card_id, to_col_id)
             .map_err(|e| map_err("move_card", &self.db_path, e))
+    }
+
+    fn list_projects(&mut self) -> Result<Vec<String>, ProviderError> {
+        store_db::list_projects(&self.db_path).map_err(|e| map_err("list_projects", &self.db_path, e))
+    }
+
+    fn select_project(&mut self, project: &str) -> Result<(), ProviderError> {
+        let code = project.trim();
+        if code.is_empty() {
+            return Err(ProviderError::Validation {
+                msg: "project code required".to_string(),
+            });
+        }
+        self.project = code.to_string();
+        self.project_explicit = true;
+        Ok(())
+    }
+
+    fn needs_project_selection(&self) -> bool {
+        !self.project_explicit
+    }
+
+    fn active_project(&self) -> Option<String> {
+        Some(self.project.clone())
     }
 
     fn create_card(&mut self, to_col_id: &str, _project: &str) -> Result<String, ProviderError> {
@@ -361,6 +408,59 @@ mod tests {
 
         let board = provider.load_board().map_err(|e| e.to_string())?;
         assert!(board.find_card(&id).is_none());
+
+        cleanup(&db);
+        Ok(())
+    }
+
+    #[test]
+    fn resolve_project_flags_implicit_default() {
+        assert_eq!(resolve_project(None), ("default".to_string(), false));
+        assert_eq!(resolve_project(Some("")), ("default".to_string(), false));
+        assert_eq!(resolve_project(Some("  ")), ("default".to_string(), false));
+        assert_eq!(resolve_project(Some("acme")), ("acme".to_string(), true));
+        assert_eq!(resolve_project(Some("  acme  ")), ("acme".to_string(), true));
+    }
+
+    #[test]
+    fn select_project_switches_tenant() -> TestResult {
+        let db = tmp_db();
+        let mut provider = LocalProvider::new(db.clone(), "acme".to_string());
+        assert!(!provider.needs_project_selection());
+
+        provider.select_project("  beta ").map_err(|e| e.to_string())?;
+        assert_eq!(provider.project, "beta");
+        assert!(!provider.needs_project_selection());
+
+        let err = provider.select_project("   ").unwrap_err();
+        assert!(matches!(err, ProviderError::Validation { .. }));
+
+        cleanup(&db);
+        Ok(())
+    }
+
+    #[test]
+    fn with_project_pins_explicit_tenant() {
+        let provider = LocalProvider::with_project("  acme ".to_string());
+        assert_eq!(provider.project, "acme");
+        assert_eq!(provider.active_project(), Some("acme".to_string()));
+        assert!(!provider.needs_project_selection());
+    }
+
+    #[test]
+    fn list_projects_lists_tenants() -> TestResult {
+        let db = tmp_db();
+        let mut provider = LocalProvider::new(db.clone(), "zeta".to_string());
+        assert!(provider.list_projects().map_err(|e| e.to_string())?.is_empty());
+
+        provider.load_board().map_err(|e| e.to_string())?;
+        provider.select_project("acme").map_err(|e| e.to_string())?;
+        provider.load_board().map_err(|e| e.to_string())?;
+
+        assert_eq!(
+            provider.list_projects().map_err(|e| e.to_string())?,
+            vec!["acme".to_string(), "zeta".to_string()]
+        );
 
         cleanup(&db);
         Ok(())

@@ -66,6 +66,31 @@ pub trait Provider {
         })
     }
 
+    /// All tenant codes available for interactive selection.
+    fn list_projects(&mut self) -> Result<Vec<String>, ProviderError> {
+        Err(ProviderError::Parse {
+            msg: "project selection not supported by current provider".to_string(),
+        })
+    }
+
+    /// Switch the active tenant to an existing (or new) project code.
+    fn select_project(&mut self, _project: &str) -> Result<(), ProviderError> {
+        Err(ProviderError::Parse {
+            msg: "project selection not supported by current provider".to_string(),
+        })
+    }
+
+    /// Whether the active tenant still needs interactive selection
+    /// (i.e. it was not chosen explicitly via configuration).
+    fn needs_project_selection(&self) -> bool {
+        false
+    }
+
+    /// The active tenant code, if this provider has that concept.
+    fn active_project(&self) -> Option<String> {
+        None
+    }
+
     fn update_card(&mut self, _card_id: &str, _title: &str, _description: &str, _priority: Priority, _assignee: &str, _project: &str, _depends_on: &[String]) -> Result<(), ProviderError> {
         Err(ProviderError::Parse {
             msg: "update_card not supported by current provider".to_string(),
@@ -74,8 +99,18 @@ pub trait Provider {
 }
 
 pub fn from_env() -> Box<dyn Provider> {
+    from_env_with_project(None)
+}
+
+/// Like [`from_env`], but pins the local backend to an explicit tenant
+/// (used by the CLI flag and by TUI background moves after an interactive
+/// selection). The Jira backend ignores the override.
+pub fn from_env_with_project(project: Option<String>) -> Box<dyn Provider> {
     match std::env::var("FLOW_PROVIDER").ok().as_deref() {
         Some("jira") => Box::new(crate::provider_jira::JiraProvider::from_env()),
-        _ => Box::new(crate::provider_local::LocalProvider::from_env()),
+        _ => match project {
+            Some(p) => Box::new(crate::provider_local::LocalProvider::with_project(p)),
+            None => Box::new(crate::provider_local::LocalProvider::from_env()),
+        },
     }
 }

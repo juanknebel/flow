@@ -18,7 +18,7 @@ use ratatui::{
 
 use flow_core::{Board, provider, model::Priority};
 use flow_tui::{
-    App, Action, EditState, EditFocus, SearchState, ProjectFilterState,
+    App, Action, EditState, EditFocus, SearchState, ProjectFilterState, ProjectSelectState,
     app::{parse_depends_on_field, format_depends_on_field},
     ui::render, ui::action_from_key,
 };
@@ -38,8 +38,83 @@ fn main() -> io::Result<()> {
     res
 }
 
+/// Interactive tenant picker, shown when no project was configured.
+/// Returns true to proceed loading the board, false when the user quits.
+fn run_project_selector(
+    terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
+    provider: &mut Box<dyn provider::Provider>,
+) -> io::Result<bool> {
+    let projects = match provider.list_projects() {
+        // A broken database surfaces its error on the load screen below.
+        Err(_) => return Ok(true),
+        Ok(p) => p,
+    };
+    let mut app = App::new(Board { columns: vec![] });
+    app.project_select_state = Some(ProjectSelectState::new(projects));
+
+    loop {
+        terminal.draw(|f| render(f, &app, None))?;
+        if !event::poll(Duration::from_millis(50))? {
+            continue;
+        }
+        let Event::Key(k) = event::read()? else {
+            continue;
+        };
+        if k.kind != KeyEventKind::Press {
+            continue;
+        }
+        let Some(ps) = app.project_select_state.as_mut() else {
+            break;
+        };
+        if ps.input_mode {
+            match k.code {
+                crossterm::event::KeyCode::Esc => ps.input_mode = false,
+                crossterm::event::KeyCode::Enter => {
+                    if ps.input.trim().is_empty() {
+                        app.banner = Some("Project code required".to_string());
+                    } else {
+                        let code = ps.input.clone();
+                        match provider.select_project(&code) {
+                            Ok(()) => return Ok(true),
+                            Err(e) => app.banner = Some(format!("Select failed: {e}")),
+                        }
+                    }
+                }
+                crossterm::event::KeyCode::Char(c) => ps.insert_char(c),
+                crossterm::event::KeyCode::Backspace => ps.delete_prev(),
+                crossterm::event::KeyCode::Left => ps.move_cursor_left(),
+                crossterm::event::KeyCode::Right => ps.move_cursor_right(),
+                _ => {}
+            }
+            continue;
+        }
+        match k.code {
+            crossterm::event::KeyCode::Char('q') | crossterm::event::KeyCode::Esc => return Ok(false),
+            crossterm::event::KeyCode::Char('j') | crossterm::event::KeyCode::Down => ps.move_down(),
+            crossterm::event::KeyCode::Char('k') | crossterm::event::KeyCode::Up => ps.move_up(),
+            crossterm::event::KeyCode::Tab | crossterm::event::KeyCode::Char('n') => ps.input_mode = true,
+            crossterm::event::KeyCode::Enter => {
+                if let Some(code) = ps.projects.get(ps.cursor).cloned() {
+                    match provider.select_project(&code) {
+                        Ok(()) => return Ok(true),
+                        Err(e) => app.banner = Some(format!("Select failed: {e}")),
+                    }
+                } else {
+                    ps.input_mode = true;
+                }
+            }
+            _ => {}
+        }
+    }
+    Ok(false)
+}
+
 fn run_tui(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> io::Result<()> {
     let mut provider = provider::from_env();
+
+    if provider.needs_project_selection() && !run_project_selector(terminal, &mut provider)? {
+        return Ok(());
+    }
 
     let board = match provider.load_board() {
         Ok(b) => b,
@@ -61,6 +136,10 @@ fn run_tui(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> io::Result<
             return Ok(());
         }
     };
+
+    // Pinned for background moves: they build a fresh provider per move and
+    // must hit the selected tenant, not re-resolve the environment.
+    let active_project = provider.active_project();
 
     let mut app = App::new(board);
     app.focus_first_non_empty();
@@ -87,7 +166,7 @@ fn run_tui(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> io::Result<
                 Ok(Ok(None)) => {
                     move_rx = None;
                     if let Some((card_id, dst)) = move_queue.pop_front() {
-                        move_rx = Some(spawn_move(card_id, dst));
+                        move_rx = Some(spawn_move(card_id, dst, active_project.clone()));
                         app.banner = Some(format!("Moving... ({} queued)", move_queue.len()));
                     } else {
                         app.banner = None;
@@ -461,7 +540,7 @@ fn run_tui(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> io::Result<
                                         ));
                                     }
                                 } else if let Some((card_id, dst)) = app.optimistic_move(-1) {
-                                    move_rx = Some(spawn_move(card_id, dst));
+                                    move_rx = Some(spawn_move(card_id, dst, active_project.clone()));
                                     app.banner = Some("Moving...".to_string());
                                 }
                             }
@@ -479,7 +558,7 @@ fn run_tui(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> io::Result<
                                         ));
                                     }
                                 } else if let Some((card_id, dst)) = app.optimistic_move(1) {
-                                    move_rx = Some(spawn_move(card_id, dst));
+                                    move_rx = Some(spawn_move(card_id, dst, active_project.clone()));
                                     app.banner = Some("Moving...".to_string());
                                 }
                             }
@@ -560,11 +639,11 @@ fn update_quit_banner(
     };
 }
 
-fn spawn_move(card_id: String, dst: String) -> Receiver<Result<Option<Board>, String>> {
+fn spawn_move(card_id: String, dst: String, project: Option<String>) -> Receiver<Result<Option<Board>, String>> {
     let (tx, rx) = mpsc::channel::<Result<Option<Board>, String>>();
     thread::spawn(move || {
         let res = panic::catch_unwind(|| {
-            let mut p = flow_core::provider::from_env();
+            let mut p = flow_core::provider::from_env_with_project(project);
             match p.move_card(&card_id, &dst) {
                 Ok(()) => {
                     let _ = tx.send(Ok(None));

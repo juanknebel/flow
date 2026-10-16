@@ -218,6 +218,80 @@ pub struct ProjectFilterState {
     pub cursor: usize,
 }
 
+/// Startup tenant picker, shown when no project was configured.
+/// Lists existing tenants; the input line creates a new one.
+pub struct ProjectSelectState {
+    /// All tenant codes in the database (sorted).
+    pub projects: Vec<String>,
+    /// Cursor position in the list.
+    pub cursor: usize,
+    /// New-project input text.
+    pub input: String,
+    pub cursor_pos: usize,
+    /// Whether the input line (vs the list) has focus.
+    pub input_mode: bool,
+}
+
+impl ProjectSelectState {
+    pub fn new(projects: Vec<String>) -> Self {
+        Self {
+            input_mode: projects.is_empty(),
+            projects,
+            cursor: 0,
+            input: String::new(),
+            cursor_pos: 0,
+        }
+    }
+
+    pub fn move_up(&mut self) {
+        self.cursor = self.cursor.saturating_sub(1);
+    }
+
+    pub fn move_down(&mut self) {
+        if !self.projects.is_empty() {
+            self.cursor = (self.cursor + 1).min(self.projects.len() - 1);
+        }
+    }
+
+    pub fn insert_char(&mut self, c: char) {
+        let pos = self.cursor_pos;
+        if pos >= self.input.len() {
+            self.input.push(c);
+        } else {
+            self.input.insert(pos, c);
+        }
+        self.cursor_pos += c.len_utf8();
+    }
+
+    pub fn delete_prev(&mut self) {
+        if self.cursor_pos > 0 {
+            let pos = self.cursor_pos;
+            if let Some((idx, _)) = self.input.char_indices().filter(|(i, _)| *i < pos).last() {
+                self.input.remove(idx);
+                self.cursor_pos = idx;
+            }
+        }
+    }
+
+    pub fn move_cursor_left(&mut self) {
+        if self.cursor_pos > 0 {
+            let pos = self.cursor_pos;
+            if let Some((idx, _)) = self.input.char_indices().filter(|(i, _)| *i < pos).last() {
+                self.cursor_pos = idx;
+            }
+        }
+    }
+
+    pub fn move_cursor_right(&mut self) {
+        let pos = self.cursor_pos;
+        if let Some((idx, _)) = self.input.char_indices().filter(|(i, _)| *i > pos).next() {
+            self.cursor_pos = idx;
+        } else if pos < self.input.len() {
+            self.cursor_pos = self.input.len();
+        }
+    }
+}
+
 pub struct App {
     pub board: Board,
     pub col: usize,
@@ -227,6 +301,7 @@ pub struct App {
     pub edit_state: Option<EditState>,
     pub search_state: Option<SearchState>,
     pub project_filter_state: Option<ProjectFilterState>,
+    pub project_select_state: Option<ProjectSelectState>,
     /// Active project filter: empty = show all, otherwise only these projects.
     pub project_filter: Vec<String>,
     pub banner: Option<String>,
@@ -244,6 +319,7 @@ impl App {
             edit_state: None,
             search_state: None,
             project_filter_state: None,
+            project_select_state: None,
             project_filter: Vec::new(),
             banner: None,
             sort_order: SortOrder::default(),
@@ -739,5 +815,47 @@ mod tests {
         search.delete_prev();
         assert_eq!(search.query, "a");
         assert_eq!(search.cursor_pos, 1);
+    }
+
+    #[test]
+    fn select_starts_in_input_mode_when_no_projects() {
+        let ps = ProjectSelectState::new(vec![]);
+        assert!(ps.input_mode);
+
+        let ps = ProjectSelectState::new(vec!["acme".to_string()]);
+        assert!(!ps.input_mode);
+        assert_eq!(ps.cursor, 0);
+    }
+
+    #[test]
+    fn select_cursor_clamps_to_list() {
+        let mut ps = ProjectSelectState::new(vec!["a".to_string(), "b".to_string()]);
+        ps.move_up();
+        assert_eq!(ps.cursor, 0);
+        ps.move_down();
+        assert_eq!(ps.cursor, 1);
+        ps.move_down();
+        assert_eq!(ps.cursor, 1);
+
+        let mut empty = ProjectSelectState::new(vec![]);
+        empty.move_down();
+        assert_eq!(empty.cursor, 0);
+    }
+
+    #[test]
+    fn select_input_insert_and_delete() {
+        let mut ps = ProjectSelectState::new(vec![]);
+        ps.insert_char('a');
+        ps.insert_char('b');
+        assert_eq!(ps.input, "ab");
+        assert_eq!(ps.cursor_pos, 2);
+
+        ps.move_cursor_left();
+        ps.delete_prev();
+        assert_eq!(ps.input, "b");
+
+        ps.move_cursor_right();
+        ps.move_cursor_right();
+        assert_eq!(ps.cursor_pos, 1);
     }
 }

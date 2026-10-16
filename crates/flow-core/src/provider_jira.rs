@@ -594,6 +594,13 @@ mod tests {
     }
 
     #[test]
+    fn jira_supports_no_project_selection() {
+        let provider = JiraProvider::from_parts(None, None, None, None);
+        assert_eq!(provider.active_project(), None);
+        assert!(!provider.needs_project_selection());
+    }
+
+    #[test]
     fn column_order_from_config_preserves_board_order() {
         let cfg = BoardConfigResponse {
             column_config: ColumnConfig {

@@ -79,10 +79,14 @@ keeps working too: `flow.db` is created inside it):
 FLOW_BOARD_PATH=/path/to/board.db flow
 ```
 
-To select the tenant, set `FLOW_PROJECT` (default: `default`):
+To select the tenant, set `FLOW_PROJECT`:
 ```bash
 FLOW_PROJECT=acme flow
 ```
+
+When `FLOW_PROJECT` is unset, the TUI shows a project picker listing
+every tenant in the database (or accepts a new code). The CLI ignores
+`FLOW_PROJECT` and requires `--project` on every invocation instead.
 
 `FLOW_PROJECT=demo` seeds a demo board with example cards on first use.
 
@@ -127,25 +131,25 @@ JIRA_BOARD_ID=123
 
 ```bash
 # List all columns and cards
-flow-cli list
+flow-cli --project acme list
 
 # Show a specific card
-flow-cli show FLOW-1
+flow-cli --project acme show FLOW-1
 
 # Create a new card
-flow-cli create todo "My new task" --body "Some details" --priority high
+flow-cli --project acme create todo "My new task" --body "Some details" --priority high
 
 # Edit a card's priority
-flow-cli edit FLOW-1 --priority bug
+flow-cli --project acme edit FLOW-1 --priority bug
 
 # Move a card to another column
-flow-cli move FLOW-1 in_progress
+flow-cli --project acme move FLOW-1 in_progress
 
 # Delete a card permanently
-flow-cli delete FLOW-1
+flow-cli --project acme delete FLOW-1
 
 # List column IDs
-flow-cli columns
+flow-cli --project acme columns
 ```
 
 Output format can be changed with `-f`: `plain`, `json`, `xml`, `csv`, `table`, `markdown`.

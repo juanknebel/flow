@@ -135,6 +135,17 @@ fn ensure_tenant(conn: &Connection, project: &str) -> Result<(), StoreError> {
     Ok(())
 }
 
+/// All tenant codes in the database, sorted. Creates the schema on a fresh
+/// database but no tenants.
+pub fn list_projects(db_path: &Path) -> Result<Vec<String>, StoreError> {
+    let conn = open_db(db_path)?;
+    let mut stmt = conn.prepare("SELECT code FROM projects ORDER BY code")?;
+    let codes: Vec<String> = stmt
+        .query_map([], |row| row.get(0))?
+        .collect::<Result<_, _>>()?;
+    Ok(codes)
+}
+
 pub fn load_board(db_path: &Path, project: &str) -> Result<Board, StoreError> {
     let conn = open_db(db_path)?;
     ensure_tenant(&conn, project)?;
@@ -527,6 +538,23 @@ mod tests {
         let board = load_board(&db, "bbb").map_err(|e| format!("{e:?}"))?;
         assert!(board.find_card(&id).is_none());
         assert_eq!(board.columns.len(), 4);
+
+        cleanup(&db);
+        Ok(())
+    }
+
+    #[test]
+    fn list_projects_reports_tenants_sorted() -> TestResult {
+        let db = tmp_db();
+        assert!(list_projects(&db).map_err(|e| format!("{e:?}"))?.is_empty());
+
+        load_board(&db, "zeta").map_err(|e| format!("{e:?}"))?;
+        load_board(&db, "acme").map_err(|e| format!("{e:?}"))?;
+
+        assert_eq!(
+            list_projects(&db).map_err(|e| format!("{e:?}"))?,
+            vec!["acme".to_string(), "zeta".to_string()]
+        );
 
         cleanup(&db);
         Ok(())

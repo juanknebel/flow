@@ -25,13 +25,13 @@ BOARD MODEL:
   card can't be deleted while other cards still depend on it.
   Cards live in exactly one column and can be moved between them.
 
-TYPICAL WORKFLOW:
-  1. flow columns              List available column ids
-  2. flow list                 See all cards grouped by column
-  3. flow show <card_id>       Read a card's full description
-  4. flow create <col> \"title\" Create a card in a column
-  5. flow edit <card_id> ...   Update a card's title or body
-  6. flow move <card_id> <col> Move a card to another column
+TYPICAL WORKFLOW (--project is required on every invocation):
+  1. flow-cli --project acme columns
+  2. flow-cli --project acme list
+  3. flow-cli --project acme show <card_id>
+  4. flow-cli --project acme create <col> \"title\"
+  5. flow-cli --project acme edit <card_id> ...
+  6. flow-cli --project acme move <card_id> <col>
 
 OUTPUT:
   All subcommands write to stdout. Use -f to choose the format:
@@ -44,22 +44,22 @@ PROVIDERS:
                           app, set by FLOW_BOARD_PATH (a .db file, or a
                           directory holding flow.db); defaults to
                           ~/.config/flow/flow.db. Every tenant lives in that
-                          file; FLOW_PROJECT selects the tenant (default
-                          \"default\"). FLOW_PROJECT=demo seeds a demo board
-                          on first use.
+                          file; --project selects the tenant (required).
+                          The CLI ignores FLOW_PROJECT.
     FLOW_PROVIDER=jira    Jira Cloud. Requires JIRA_BASE_URL, JIRA_EMAIL,
-                          JIRA_API_TOKEN, and JIRA_BOARD_ID.
+                          JIRA_API_TOKEN, and JIRA_BOARD_ID. --project
+                          scopes `list` to that Jira project.
 
 EXAMPLES:
-  flow-cli list -f json
-  flow-cli columns -f csv
-  flow-cli show FLOW-1
-  flow-cli create todo \"Fix login bug\" --body \"Users report 500 on /login\" --priority high
-  flow-cli edit FLOW-1 --title \"Updated title\" --priority bug
-  flow-cli edit FLOW-5 --depends-on FLOW-1,FLOW-2      # comma-separated
-  flow-cli edit FLOW-5 --depends-on FLOW-1 --depends-on FLOW-2  # repeated flag
-  flow-cli edit FLOW-5 --depends-on \"\"                  # clear all dependencies
-  flow-cli move FLOW-1 done"
+  flow-cli --project acme list -f json
+  flow-cli --project acme columns -f csv
+  flow-cli --project acme show FLOW-1
+  flow-cli --project acme create todo \"Fix login bug\" --body \"Users report 500 on /login\" --priority high
+  flow-cli --project acme edit FLOW-1 --title \"Updated title\" --priority bug
+  flow-cli --project acme edit FLOW-5 --depends-on FLOW-1,FLOW-2      # comma-separated
+  flow-cli --project acme edit FLOW-5 --depends-on FLOW-1 --depends-on FLOW-2  # repeated flag
+  flow-cli --project acme edit FLOW-5 --depends-on \"\"                  # clear all dependencies
+  flow-cli --project acme move FLOW-1 done"
 )]
 pub struct Cli {
     #[command(subcommand)]
@@ -68,16 +68,17 @@ pub struct Cli {
     /// Output format: plain, json, xml, csv, table, markdown
     #[arg(long, short = 'f', default_value = "plain", global = true)]
     pub format: Format,
+
+    /// Project code (required): selects the tenant (local backend)
+    /// or scopes list (Jira)
+    #[arg(long, global = true)]
+    pub project: Option<String>,
 }
 
 #[derive(Subcommand)]
 pub enum Command {
     /// List all columns with their cards (id and title per card)
-    List {
-        /// Filter by project name (can be repeated for multiple projects)
-        #[arg(long)]
-        project: Vec<String>,
-    },
+    List,
 
     /// Show full card details: id, title, description, and column
     Show {
@@ -108,10 +109,6 @@ pub enum Command {
         /// Assignee (email or user id)
         #[arg(long)]
         assignee: Option<String>,
-        /// Project label (the local backend always assigns the active
-        /// FLOW_PROJECT tenant instead)
-        #[arg(long)]
-        project: Option<String>,
         /// Ids of cards this one depends on. Each must already exist on the
         /// board. Accepts a comma-separated list and/or can be repeated:
         /// `--depends-on A,B` and `--depends-on A --depends-on B` both work.
@@ -135,10 +132,6 @@ pub enum Command {
         /// New assignee (email or user id, keeps current if omitted)
         #[arg(long)]
         assignee: Option<String>,
-        /// Project name (keeps current if omitted; the local backend
-        /// always keeps the active FLOW_PROJECT tenant)
-        #[arg(long)]
-        project: Option<String>,
         /// Ids of cards this one depends on (keeps current list if omitted).
         /// Each must already exist on the board. Accepts a comma-separated
         /// list and/or can be repeated: `--depends-on A,B` and
@@ -158,15 +151,20 @@ pub enum Command {
     Columns,
 }
 
-pub fn run(cmd: Command, fmt: Format) -> io::Result<()> {
-    let mut prov = provider::from_env();
+pub fn run(cmd: Command, fmt: Format, project: Option<&str>) -> io::Result<()> {
+    let tenant = project
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .ok_or_else(|| io::Error::other("--project <CODE> is required"))?;
+    let tenant = tenant.to_string();
+    let mut prov = provider::from_env_with_project(Some(tenant.clone()));
 
     match cmd {
-        Command::List { project } => {
+        Command::List => {
             let mut board = prov
                 .load_board()
                 .map_err(|e| io::Error::other(e.to_string()))?;
-            board.apply_project_filter(&project);
+            board.apply_project_filter(std::slice::from_ref(&tenant));
             println!("{}", format::format_board(&board, fmt).map_err(io::Error::other)?);
         }
         Command::Show { card_id } => {
@@ -203,12 +201,10 @@ pub fn run(cmd: Command, fmt: Format) -> io::Result<()> {
             body,
             priority,
             assignee,
-            project,
             depends_on,
         } => {
-            let project = project.unwrap_or_default();
             let card_id = prov
-                .create_card(&column_id, &project)
+                .create_card(&column_id, &tenant)
                 .map_err(|e| io::Error::other(e.to_string()))?;
 
             if title.is_some() || body.is_some() || priority.is_some() || assignee.is_some() || depends_on.is_some() {
@@ -217,7 +213,7 @@ pub fn run(cmd: Command, fmt: Format) -> io::Result<()> {
                 let p = priority.as_deref().map(Priority::from_str).unwrap_or(Priority::Medium);
                 let a = assignee.as_deref().unwrap_or("");
                 let d = depends_on.unwrap_or_default();
-                prov.update_card(&card_id, t, b, p, a, &project, &d)
+                prov.update_card(&card_id, t, b, p, a, &tenant, &d)
                     .map_err(|e| io::Error::other(e.to_string()))?;
             }
 
@@ -239,12 +235,11 @@ pub fn run(cmd: Command, fmt: Format) -> io::Result<()> {
             body,
             priority,
             assignee,
-            project,
             depends_on,
         } => {
-            if title.is_none() && body.is_none() && priority.is_none() && assignee.is_none() && project.is_none() && depends_on.is_none() {
+            if title.is_none() && body.is_none() && priority.is_none() && assignee.is_none() && depends_on.is_none() {
                 return Err(io::Error::other(
-                    "edit requires at least --title, --body, --priority, --assignee, --project, or --depends-on",
+                    "edit requires at least --title, --body, --priority, --assignee, or --depends-on",
                 ));
             }
 
@@ -256,9 +251,8 @@ pub fn run(cmd: Command, fmt: Format) -> io::Result<()> {
             let b = body.as_deref().unwrap_or(&cur.description);
             let p = priority.as_deref().map(Priority::from_str).unwrap_or(cur.priority);
             let a = assignee.as_deref().unwrap_or(&cur.assignee);
-            let proj = project.as_deref().unwrap_or(&cur.project);
             let d = depends_on.unwrap_or_else(|| cur.depends_on.clone());
-            prov.update_card(&card_id, t, b, p, a, proj, &d)
+            prov.update_card(&card_id, t, b, p, a, &cur.project, &d)
                 .map_err(|e| io::Error::other(e.to_string()))?;
 
             println!(

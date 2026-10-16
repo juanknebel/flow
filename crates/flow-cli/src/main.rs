@@ -6,5 +6,5 @@ mod cli;
 
 fn main() -> io::Result<()> {
     let args = cli::Cli::parse();
-    cli::run(args.command, args.format)
+    cli::run(args.command, args.format, args.project.as_deref())
 }

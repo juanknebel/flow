@@ -22,7 +22,7 @@ cargo install --path crates/flow-cli  # install CLI binary
 
 - `FLOW_PROVIDER=local|jira` — selects backend (default: local)
 - `FLOW_BOARD_PATH=/path` — overrides the SQLite file for local mode (a directory keeps working: `flow.db` is created inside it; default: `~/.config/flow/flow.db`)
-- `FLOW_PROJECT=code` — selects the tenant in local mode (default: `default`; `demo` seeds a demo board on first use)
+- `FLOW_PROJECT=code` — selects the tenant for the TUI in local mode (`demo` seeds a demo board on first use; when unset, the TUI shows a project picker). The CLI ignores it and requires `--project` instead
 - Jira mode requires: `JIRA_BASE_URL`, `JIRA_EMAIL`, `JIRA_API_TOKEN`, `JIRA_BOARD_ID`
 
 ## Architecture
@@ -57,16 +57,16 @@ Defined once in root `Cargo.toml` under `[workspace.package]`. All crates inheri
 
 ## Task management
 
-This project uses `flow` itself as its Kanban task board. The project board lives in `./.board/flow.db` (gitignored), tenant `FLOW_PROJECT=flow`.
+This project uses `flow` itself as its Kanban task board. The project board lives in `./.board/flow.db` (gitignored), tenant `flow`.
 
 ```bash
-FLOW_BOARD_PATH=./.board FLOW_PROJECT=flow flow-cli list             # list all cards
-FLOW_BOARD_PATH=./.board FLOW_PROJECT=flow flow-cli columns          # list columns
-FLOW_BOARD_PATH=./.board FLOW_PROJECT=flow flow-cli show <card_id>   # show card details
-FLOW_BOARD_PATH=./.board FLOW_PROJECT=flow flow-cli create <col> "title" --priority high
-FLOW_BOARD_PATH=./.board FLOW_PROJECT=flow flow-cli move <card_id> <col>
-FLOW_BOARD_PATH=./.board FLOW_PROJECT=flow flow-cli edit <card_id> --title "new title"
-FLOW_BOARD_PATH=./.board FLOW_PROJECT=flow flow-cli delete <card_id>
+FLOW_BOARD_PATH=./.board flow-cli --project flow list             # list all cards
+FLOW_BOARD_PATH=./.board flow-cli --project flow columns          # list columns
+FLOW_BOARD_PATH=./.board flow-cli --project flow show <card_id>   # show card details
+FLOW_BOARD_PATH=./.board flow-cli --project flow create <col> "title" --priority high
+FLOW_BOARD_PATH=./.board flow-cli --project flow move <card_id> <col>
+FLOW_BOARD_PATH=./.board flow-cli --project flow edit <card_id> --title "new title"
+FLOW_BOARD_PATH=./.board flow-cli --project flow delete <card_id>
 ```
 
 Use `flow-cli` for board management and `flow` to launch the TUI. Use this board to track tasks, bugs, and features for the project.
