@@ -88,6 +88,9 @@ When `FLOW_PROJECT` is unset, the TUI shows a project picker listing
 every tenant in the database (or accepts a new code). The CLI ignores
 `FLOW_PROJECT` and requires `--project` on every invocation instead.
 
+The code `all` (any case) is reserved: it opens a read-only union of
+every tenant, filterable by project with `p` in the TUI.
+
 `FLOW_PROJECT=demo` seeds a demo board with example cards on first use.
 
 Valid priorities: `LOW`, `MEDIUM`, `HIGH`, `BUG`, `WISHLIST`.

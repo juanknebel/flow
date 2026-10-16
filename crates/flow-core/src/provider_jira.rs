@@ -598,6 +598,7 @@ mod tests {
         let provider = JiraProvider::from_parts(None, None, None, None);
         assert_eq!(provider.active_project(), None);
         assert!(!provider.needs_project_selection());
+        assert!(!provider.is_read_only());
     }
 
     #[test]

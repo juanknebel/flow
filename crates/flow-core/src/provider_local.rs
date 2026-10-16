@@ -90,13 +90,33 @@ fn as_db_file(p: PathBuf) -> PathBuf {
     }
 }
 
+/// Reserved tenant code (any case): the read-only union of all tenants.
+/// It can never name a real tenant — every path resolves it to the union
+/// before any tenant row is touched.
+fn is_all(project: &str) -> bool {
+    project.eq_ignore_ascii_case("all")
+}
+
+fn read_only() -> ProviderError {
+    ProviderError::Validation {
+        msg: "all-projects view is read-only".to_string(),
+    }
+}
+
 impl Provider for LocalProvider {
     fn load_board(&mut self) -> Result<Board, ProviderError> {
+        if is_all(&self.project) {
+            return store_db::load_board_all(&self.db_path)
+                .map_err(|e| map_err("load_board", &self.db_path, e));
+        }
         store_db::load_board(&self.db_path, &self.project)
             .map_err(|e| map_err("load_board", &self.db_path, e))
     }
 
     fn move_card(&mut self, card_id: &str, to_col_id: &str) -> Result<(), ProviderError> {
+        if is_all(&self.project) {
+            return Err(read_only());
+        }
         store_db::move_card(&self.db_path, &self.project, card_id, to_col_id)
             .map_err(|e| map_err("move_card", &self.db_path, e))
     }
@@ -125,7 +145,14 @@ impl Provider for LocalProvider {
         Some(self.project.clone())
     }
 
+    fn is_read_only(&self) -> bool {
+        is_all(&self.project)
+    }
+
     fn create_card(&mut self, to_col_id: &str, _project: &str) -> Result<String, ProviderError> {
+        if is_all(&self.project) {
+            return Err(read_only());
+        }
         // Cards always belong to the active tenant; the caller-supplied
         // project label is ignored so a card can never escape its partition.
         store_db::create_card(&self.db_path, &self.project, to_col_id)
@@ -133,6 +160,9 @@ impl Provider for LocalProvider {
     }
 
     fn delete_card(&mut self, card_id: &str) -> Result<(), ProviderError> {
+        if is_all(&self.project) {
+            return Err(read_only());
+        }
         // A card can't be deleted while other cards still depend on it —
         // that would leave a dangling reference.
         let board = self.load_board()?;
@@ -152,6 +182,9 @@ impl Provider for LocalProvider {
     }
 
     fn update_card(&mut self, card_id: &str, title: &str, description: &str, priority: Priority, assignee: &str, _project: &str, depends_on: &[String]) -> Result<(), ProviderError> {
+        if is_all(&self.project) {
+            return Err(read_only());
+        }
         let deps = self.validate_depends_on(card_id, depends_on)?;
         store_db::update_card(&self.db_path, &self.project, card_id, title, description, priority, assignee, &deps)
             .map_err(|e| map_err("update_card", &self.db_path, e))
@@ -461,6 +494,37 @@ mod tests {
             provider.list_projects().map_err(|e| e.to_string())?,
             vec!["acme".to_string(), "zeta".to_string()]
         );
+
+        cleanup(&db);
+        Ok(())
+    }
+
+    #[test]
+    fn all_view_is_read_only_union() -> TestResult {
+        let db = tmp_db();
+        let mut a = LocalProvider::new(db.clone(), "aaa".to_string());
+        let id_a = a.create_card("todo", "aaa").map_err(|e| e.to_string())?;
+        let mut z = LocalProvider::new(db.clone(), "zzz".to_string());
+        let id_z = z.create_card("done", "zzz").map_err(|e| e.to_string())?;
+
+        let mut all = LocalProvider::new(db.clone(), "all".to_string());
+        assert!(all.is_read_only());
+        let board = all.load_board().map_err(|e| e.to_string())?;
+        assert!(board.find_card(&id_a).is_some());
+        assert!(board.find_card(&id_z).is_some());
+
+        for res in [
+            all.move_card(&id_a, "done").map(|_| ()),
+            all.create_card("todo", "all").map(|_| ()),
+            all.update_card(&id_a, "t", "", Priority::Low, "", "all", &[]),
+            all.delete_card(&id_a),
+        ] {
+            assert!(matches!(res.unwrap_err(), ProviderError::Validation { .. }));
+        }
+        // Selecting "all" (any case) enters the union, never a real tenant.
+        a.select_project("ALL").map_err(|e| e.to_string())?;
+        assert!(a.is_read_only());
+        assert!(!a.list_projects().map_err(|e| e.to_string())?.iter().any(|c| c.eq_ignore_ascii_case("all")));
 
         cleanup(&db);
         Ok(())

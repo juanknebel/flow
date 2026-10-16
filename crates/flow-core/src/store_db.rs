@@ -183,12 +183,7 @@ fn load_cards(conn: &Connection, project: &str, col_id: &str) -> Result<Vec<Card
 
     let mut cards = Vec::with_capacity(rows.len());
     for (id, title, description, priority, assignee) in rows {
-        let mut dep_stmt = conn.prepare(
-            "SELECT depends_on FROM card_deps WHERE project_code = ?1 AND card_id = ?2 ORDER BY depends_on",
-        )?;
-        let depends_on: Vec<String> = dep_stmt
-            .query_map(params![project, id], |row| row.get(0))?
-            .collect::<Result<_, _>>()?;
+        let depends_on = load_deps(conn, project, &id)?;
         cards.push(Card {
             id,
             title,
@@ -200,6 +195,69 @@ fn load_cards(conn: &Connection, project: &str, col_id: &str) -> Result<Vec<Card
         });
     }
     Ok(cards)
+}
+
+/// Read-only union of every tenant: columns merged by id, each card carrying
+/// its tenant code as project. Creates the schema on a fresh database but
+/// no tenants (in particular never a tenant literally named "all").
+pub fn load_board_all(db_path: &Path) -> Result<Board, StoreError> {
+    let conn = open_db(db_path)?;
+
+    let mut stmt = conn.prepare(
+        "SELECT id, MIN(title) FROM columns GROUP BY id ORDER BY MIN(position), id",
+    )?;
+    let col_rows: Vec<(String, String)> = stmt
+        .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
+        .collect::<Result<_, _>>()?;
+    drop(stmt);
+
+    let mut cols = Vec::with_capacity(col_rows.len());
+    for (id, title) in col_rows {
+        let cards = load_cards_all(&conn, &id)?;
+        cols.push(Column { id, title, cards });
+    }
+
+    let mut board = Board { columns: cols };
+    board.sort_cards();
+    Ok(board)
+}
+
+fn load_cards_all(conn: &Connection, col_id: &str) -> Result<Vec<Card>, StoreError> {
+    let mut stmt = conn.prepare(
+        "SELECT project_code, id, title, description, priority, assignee
+         FROM cards WHERE column_id = ?1 ORDER BY project_code, position",
+    )?;
+    let rows: Vec<(String, String, String, String, String, String)> = stmt
+        .query_map(params![col_id], |row| {
+            Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?, row.get(5)?))
+        })?
+        .collect::<Result<_, _>>()?;
+    drop(stmt);
+
+    let mut cards = Vec::with_capacity(rows.len());
+    for (project, id, title, description, priority, assignee) in rows {
+        let depends_on = load_deps(conn, &project, &id)?;
+        cards.push(Card {
+            id,
+            title,
+            description,
+            priority: Priority::from_str(&priority),
+            assignee,
+            project,
+            depends_on,
+        });
+    }
+    Ok(cards)
+}
+
+fn load_deps(conn: &Connection, project: &str, card_id: &str) -> Result<Vec<String>, StoreError> {
+    let mut dep_stmt = conn.prepare(
+        "SELECT depends_on FROM card_deps WHERE project_code = ?1 AND card_id = ?2 ORDER BY depends_on",
+    )?;
+    let depends_on: Vec<String> = dep_stmt
+        .query_map(params![project, card_id], |row| row.get(0))?
+        .collect::<Result<_, _>>()?;
+    Ok(depends_on)
 }
 
 pub fn move_card(db_path: &Path, project: &str, card_id: &str, to_col_id: &str) -> Result<(), StoreError> {
@@ -555,6 +613,40 @@ mod tests {
             list_projects(&db).map_err(|e| format!("{e:?}"))?,
             vec!["acme".to_string(), "zeta".to_string()]
         );
+
+        cleanup(&db);
+        Ok(())
+    }
+
+    #[test]
+    fn load_board_all_merges_tenants() -> TestResult {
+        let db = tmp_db();
+        // Fresh database: no columns, and no tenant literally named "all".
+        let empty = load_board_all(&db).map_err(|e| format!("{e:?}"))?;
+        assert!(empty.columns.is_empty());
+        assert!(list_projects(&db).map_err(|e| format!("{e:?}"))?.is_empty());
+
+        let a1 = create_card(&db, "aaa", "todo").map_err(|e| format!("{e:?}"))?;
+        update_card(&db, "aaa", &a1, "A1", "", Priority::High, "", &[]).map_err(|e| format!("{e:?}"))?;
+        let a2 = create_card(&db, "aaa", "todo").map_err(|e| format!("{e:?}"))?;
+        update_card(&db, "aaa", &a2, "A2", "", Priority::Low, "", &[a1.clone()]).map_err(|e| format!("{e:?}"))?;
+        let z1 = create_card(&db, "zzz", "done").map_err(|e| format!("{e:?}"))?;
+        update_card(&db, "zzz", &z1, "Z1", "", Priority::Medium, "", &[]).map_err(|e| format!("{e:?}"))?;
+
+        let board = load_board_all(&db).map_err(|e| format!("{e:?}"))?;
+        // Columns merged by id.
+        let ids: Vec<&str> = board.columns.iter().map(|c| c.id.as_str()).collect();
+        assert_eq!(ids, vec!["todo", "in_progress", "in_review", "done"]);
+        // Every card present with its tenant code.
+        let a1_card = board.find_card(&a1).expect("a1 in union");
+        assert_eq!(a1_card.project, "aaa");
+        assert_eq!(board.find_card(&z1).unwrap().project, "zzz");
+        // Dependencies survive the union.
+        assert_eq!(board.find_card(&a2).unwrap().depends_on, vec![a1.clone()]);
+        // Placement preserved: a-cards in todo, z-card in done.
+        assert_eq!(board.columns[0].cards.len(), 2);
+        assert_eq!(board.columns[3].cards.len(), 1);
+        assert!(list_projects(&db).map_err(|e| format!("{e:?}"))?.iter().all(|c| c != "all"));
 
         cleanup(&db);
         Ok(())

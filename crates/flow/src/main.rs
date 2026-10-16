@@ -44,13 +44,13 @@ fn run_project_selector(
     terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
     provider: &mut Box<dyn provider::Provider>,
 ) -> io::Result<bool> {
-    let projects = match provider.list_projects() {
+    let state = match fetch_picker_state(&mut *provider) {
         // A broken database surfaces its error on the load screen below.
         Err(_) => return Ok(true),
-        Ok(p) => p,
+        Ok(ps) => ps,
     };
     let mut app = App::new(Board { columns: vec![] });
-    app.project_select_state = Some(ProjectSelectState::new(projects));
+    app.project_select_state = Some(state);
 
     loop {
         terminal.draw(|f| render(f, &app, None))?;
@@ -69,6 +69,17 @@ fn run_project_selector(
             SelectOutcome::Continue => {}
         }
     }
+}
+
+/// Tenant picker contents: every tenant plus the read-only union entry.
+fn fetch_picker_state(
+    provider: &mut Box<dyn provider::Provider>,
+) -> Result<ProjectSelectState, provider::ProviderError> {
+    let mut projects = provider.list_projects()?;
+    if !projects.is_empty() {
+        projects.insert(0, "all".to_string());
+    }
+    Ok(ProjectSelectState::new(projects))
 }
 
 enum SelectOutcome {
@@ -238,12 +249,17 @@ fn run_tui(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> io::Result<
                                 app.detail_open = false;
                                 app.confirm_delete = false;
                                 active_project = provider.active_project();
+                                let switched_msg = if code.eq_ignore_ascii_case("all") {
+                                    "Switched to all projects (read-only)".to_string()
+                                } else {
+                                    format!("Switched to {code}")
+                                };
                                 match provider.load_board() {
                                     Ok(mut b) => {
                                         b.sort_cards_with(app.sort_order);
                                         app.board = b;
                                         app.focus_first_non_empty();
-                                        app.banner = Some(format!("Switched to {code}"));
+                                        app.banner = Some(switched_msg);
                                     }
                                     Err(e) => app.banner = Some(format!("Reload failed: {e}")),
                                 }
@@ -503,6 +519,13 @@ fn run_tui(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> io::Result<
                             }
                         }
 
+                        if provider.is_read_only()
+                            && matches!(a, Action::Add | Action::Edit | Action::Delete | Action::MoveLeft | Action::MoveRight)
+                        {
+                            app.banner = Some("All-projects view is read-only".to_string());
+                            continue;
+                        }
+
                         match a {
                             Action::ToggleSort => {
                                 app.apply(a);
@@ -514,10 +537,9 @@ fn run_tui(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> io::Result<
                                 if move_rx.is_some() || !move_queue.is_empty() {
                                     app.banner = Some("Cannot switch project with moves in flight".to_string());
                                 } else {
-                                    match provider.list_projects() {
-                                        Ok(projects) => {
-                                            app.project_select_state =
-                                                Some(ProjectSelectState::new(projects));
+                                    match fetch_picker_state(&mut provider) {
+                                        Ok(ps) => {
+                                            app.project_select_state = Some(ps);
                                         }
                                         Err(e) => {
                                             app.banner = Some(format!("Project list failed: {e}"));

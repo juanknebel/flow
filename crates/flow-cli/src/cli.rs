@@ -45,7 +45,8 @@ PROVIDERS:
                           directory holding flow.db); defaults to
                           ~/.config/flow/flow.db. Every tenant lives in that
                           file; --project selects the tenant (required).
-                          The CLI ignores FLOW_PROJECT.
+                          --project all opens a read-only union of every
+                          tenant. The CLI ignores FLOW_PROJECT.
     FLOW_PROVIDER=jira    Jira Cloud. Requires JIRA_BASE_URL, JIRA_EMAIL,
                           JIRA_API_TOKEN, and JIRA_BOARD_ID. --project
                           scopes `list` to that Jira project.
@@ -164,7 +165,9 @@ pub fn run(cmd: Command, fmt: Format, project: Option<&str>) -> io::Result<()> {
             let mut board = prov
                 .load_board()
                 .map_err(|e| io::Error::other(e.to_string()))?;
-            board.apply_project_filter(std::slice::from_ref(&tenant));
+            if !tenant.eq_ignore_ascii_case("all") {
+                board.apply_project_filter(std::slice::from_ref(&tenant));
+            }
             println!("{}", format::format_board(&board, fmt).map_err(io::Error::other)?);
         }
         Command::Show { card_id } => {

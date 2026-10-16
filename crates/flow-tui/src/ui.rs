@@ -433,7 +433,14 @@ pub fn render(f: &mut Frame, app: &App, render_area: Option<Rect>) {
             ))));
         }
         for proj in &ps.projects {
-            items.push(ListItem::new(Line::from(Span::raw(proj.as_str()))));
+            if proj == "all" {
+                items.push(ListItem::new(Line::from(Span::styled(
+                    "* all projects (read-only)",
+                    Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+                ))));
+            } else {
+                items.push(ListItem::new(Line::from(Span::raw(proj.as_str()))));
+            }
         }
         let list = List::new(items)
             .block(

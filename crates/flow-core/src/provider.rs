@@ -91,6 +91,11 @@ pub trait Provider {
         None
     }
 
+    /// Whether this provider is read-only (the all-projects union view).
+    fn is_read_only(&self) -> bool {
+        false
+    }
+
     fn update_card(&mut self, _card_id: &str, _title: &str, _description: &str, _priority: Priority, _assignee: &str, _project: &str, _depends_on: &[String]) -> Result<(), ProviderError> {
         Err(ProviderError::Parse {
             msg: "update_card not supported by current provider".to_string(),
