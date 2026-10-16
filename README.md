@@ -107,6 +107,7 @@ JIRA_BOARD_ID=123
 ### Navigation
 - `h` / `l` or `←` / `→` — focus column
 - `j` / `k` or `↑` / `↓` — select card
+- `P` — switch project (local)
 - `H` / `L` — move card left / right
 - `Enter` — toggle detail view
 - `r` — reload board

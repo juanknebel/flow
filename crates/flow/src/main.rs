@@ -63,50 +63,82 @@ fn run_project_selector(
         if k.kind != KeyEventKind::Press {
             continue;
         }
-        let Some(ps) = app.project_select_state.as_mut() else {
-            break;
-        };
-        if ps.input_mode {
-            match k.code {
-                crossterm::event::KeyCode::Esc => ps.input_mode = false,
-                crossterm::event::KeyCode::Enter => {
-                    if ps.input.trim().is_empty() {
-                        app.banner = Some("Project code required".to_string());
-                    } else {
-                        let code = ps.input.clone();
-                        match provider.select_project(&code) {
-                            Ok(()) => return Ok(true),
-                            Err(e) => app.banner = Some(format!("Select failed: {e}")),
-                        }
-                    }
-                }
-                crossterm::event::KeyCode::Char(c) => ps.insert_char(c),
-                crossterm::event::KeyCode::Backspace => ps.delete_prev(),
-                crossterm::event::KeyCode::Left => ps.move_cursor_left(),
-                crossterm::event::KeyCode::Right => ps.move_cursor_right(),
-                _ => {}
-            }
-            continue;
-        }
-        match k.code {
-            crossterm::event::KeyCode::Char('q') | crossterm::event::KeyCode::Esc => return Ok(false),
-            crossterm::event::KeyCode::Char('j') | crossterm::event::KeyCode::Down => ps.move_down(),
-            crossterm::event::KeyCode::Char('k') | crossterm::event::KeyCode::Up => ps.move_up(),
-            crossterm::event::KeyCode::Tab | crossterm::event::KeyCode::Char('n') => ps.input_mode = true,
-            crossterm::event::KeyCode::Enter => {
-                if let Some(code) = ps.projects.get(ps.cursor).cloned() {
-                    match provider.select_project(&code) {
-                        Ok(()) => return Ok(true),
-                        Err(e) => app.banner = Some(format!("Select failed: {e}")),
-                    }
-                } else {
-                    ps.input_mode = true;
-                }
-            }
-            _ => {}
+        match handle_project_select_key(&mut app, &mut *provider, k.code) {
+            SelectOutcome::Selected(_) => return Ok(true),
+            SelectOutcome::Cancelled => return Ok(false),
+            SelectOutcome::Continue => {}
         }
     }
-    Ok(false)
+}
+
+enum SelectOutcome {
+    Selected(String),
+    Cancelled,
+    Continue,
+}
+
+/// Shared key handling for the tenant picker, used both by the startup
+/// selector and by in-board project switching.
+fn handle_project_select_key(
+    app: &mut App,
+    provider: &mut Box<dyn provider::Provider>,
+    code: crossterm::event::KeyCode,
+) -> SelectOutcome {
+    let Some(ps) = app.project_select_state.as_mut() else {
+        return SelectOutcome::Cancelled;
+    };
+    if ps.input_mode {
+        match code {
+            crossterm::event::KeyCode::Esc => ps.input_mode = false,
+            crossterm::event::KeyCode::Enter => {
+                if ps.input.trim().is_empty() {
+                    app.banner = Some("Project code required".to_string());
+                } else {
+                    let code = ps.input.clone();
+                    match provider.select_project(&code) {
+                        Ok(()) => return SelectOutcome::Selected(code),
+                        Err(e) => app.banner = Some(format!("Select failed: {e}")),
+                    }
+                }
+            }
+            crossterm::event::KeyCode::Char(c) => ps.insert_char(c),
+            crossterm::event::KeyCode::Backspace => ps.delete_prev(),
+            crossterm::event::KeyCode::Left => ps.move_cursor_left(),
+            crossterm::event::KeyCode::Right => ps.move_cursor_right(),
+            _ => {}
+        }
+        return SelectOutcome::Continue;
+    }
+    match code {
+        crossterm::event::KeyCode::Char('q') | crossterm::event::KeyCode::Esc => SelectOutcome::Cancelled,
+        crossterm::event::KeyCode::Char('j') | crossterm::event::KeyCode::Down => {
+            ps.move_down();
+            SelectOutcome::Continue
+        }
+        crossterm::event::KeyCode::Char('k') | crossterm::event::KeyCode::Up => {
+            ps.move_up();
+            SelectOutcome::Continue
+        }
+        crossterm::event::KeyCode::Tab | crossterm::event::KeyCode::Char('n') => {
+            ps.input_mode = true;
+            SelectOutcome::Continue
+        }
+        crossterm::event::KeyCode::Enter => {
+            if let Some(code) = ps.projects.get(ps.cursor).cloned() {
+                match provider.select_project(&code) {
+                    Ok(()) => SelectOutcome::Selected(code),
+                    Err(e) => {
+                        app.banner = Some(format!("Select failed: {e}"));
+                        SelectOutcome::Continue
+                    }
+                }
+            } else {
+                ps.input_mode = true;
+                SelectOutcome::Continue
+            }
+        }
+        _ => SelectOutcome::Continue,
+    }
 }
 
 fn run_tui(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> io::Result<()> {
@@ -137,9 +169,9 @@ fn run_tui(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> io::Result<
         }
     };
 
-    // Pinned for background moves: they build a fresh provider per move and
-    // must hit the selected tenant, not re-resolve the environment.
-    let active_project = provider.active_project();
+    // Pinned for background moves and card saves: they must hit the active
+    // tenant, not re-resolve the environment. Updated on project switches.
+    let mut active_project = provider.active_project();
 
     let mut app = App::new(board);
     app.focus_first_non_empty();
@@ -197,6 +229,33 @@ fn run_tui(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> io::Result<
         if event::poll(Duration::from_millis(50))? {
             if let Event::Key(k) = event::read()? {
                 if k.kind == KeyEventKind::Press {
+                    if app.project_select_state.is_some() {
+                        match handle_project_select_key(&mut app, &mut provider, k.code) {
+                            SelectOutcome::Selected(code) => {
+                                app.project_select_state = None;
+                                app.project_filter.clear();
+                                app.project_filter_state = None;
+                                app.detail_open = false;
+                                app.confirm_delete = false;
+                                active_project = provider.active_project();
+                                match provider.load_board() {
+                                    Ok(mut b) => {
+                                        b.sort_cards_with(app.sort_order);
+                                        app.board = b;
+                                        app.focus_first_non_empty();
+                                        app.banner = Some(format!("Switched to {code}"));
+                                    }
+                                    Err(e) => app.banner = Some(format!("Reload failed: {e}")),
+                                }
+                            }
+                            SelectOutcome::Cancelled => {
+                                app.project_select_state = None;
+                            }
+                            SelectOutcome::Continue => {}
+                        }
+                        continue;
+                    }
+
                     if let Some(edit) = app.edit_state.as_mut() {
                         match k.code {
                             crossterm::event::KeyCode::Esc => {
@@ -209,22 +268,21 @@ fn run_tui(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> io::Result<
                                 }
                             }
                             crossterm::event::KeyCode::Enter => {
-                                // The local backend assigns the active tenant
-                                // as the card project; the field is advisory.
+                                // Cards always belong to the active tenant.
+                                let tenant = active_project.as_deref().unwrap_or("");
                                 let is_new = edit.is_new;
                                 let col_id = edit.col_id.clone();
                                 let title = edit.title.clone();
                                 let description = edit.description.clone();
                                 let priority = edit.priority;
                                 let assignee = edit.assignee.clone();
-                                let project = edit.project.clone();
                                 let depends_on = parse_depends_on_field(&edit.depends_on);
 
                                 if is_new {
                                     // Create card in the active tenant (ID prefixed by tenant code)
-                                    match provider.create_card(&col_id, &project) {
+                                    match provider.create_card(&col_id, tenant) {
                                         Ok(card_id) => {
-                                            if let Err(e) = provider.update_card(&card_id, &title, &description, priority, &assignee, &project, &depends_on) {
+                                            if let Err(e) = provider.update_card(&card_id, &title, &description, priority, &assignee, tenant, &depends_on) {
                                                 app.banner = Some(format!("Save failed: {e}"));
                                             } else {
                                                 match provider.load_board() {
@@ -245,7 +303,7 @@ fn run_tui(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> io::Result<
                                     }
                                 } else {
                                     let card_id = edit.card_id.clone();
-                                    if let Err(e) = provider.update_card(&card_id, &title, &description, priority, &assignee, &project, &depends_on) {
+                                    if let Err(e) = provider.update_card(&card_id, &title, &description, priority, &assignee, tenant, &depends_on) {
                                         app.banner = Some(format!("Save failed: {e}"));
                                     } else {
                                         match provider.load_board() {
@@ -449,6 +507,24 @@ fn run_tui(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> io::Result<
                             Action::ToggleSort => {
                                 app.apply(a);
                             }
+                            Action::SwitchProject => {
+                                if quitting {
+                                    continue;
+                                }
+                                if move_rx.is_some() || !move_queue.is_empty() {
+                                    app.banner = Some("Cannot switch project with moves in flight".to_string());
+                                } else {
+                                    match provider.list_projects() {
+                                        Ok(projects) => {
+                                            app.project_select_state =
+                                                Some(ProjectSelectState::new(projects));
+                                        }
+                                        Err(e) => {
+                                            app.banner = Some(format!("Project list failed: {e}"));
+                                        }
+                                    }
+                                }
+                            }
                             Action::Add => {
                                 if quitting {
                                     continue;
@@ -465,7 +541,6 @@ fn run_tui(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> io::Result<
                                     description: String::new(),
                                     priority: Priority::Medium,
                                     assignee: String::new(),
-                                    project: String::new(),
                                     depends_on: String::new(),
                                     cursor_pos: 8,
                                     focus: EditFocus::Title,
@@ -520,7 +595,6 @@ fn run_tui(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> io::Result<
                                     description: card.description.clone(),
                                     priority: card.priority,
                                     assignee: card.assignee.clone(),
-                                    project: card.project.clone(),
                                     depends_on: format_depends_on_field(&card.depends_on),
                                     cursor_pos: card.title.len(),
                                     focus: EditFocus::Title,

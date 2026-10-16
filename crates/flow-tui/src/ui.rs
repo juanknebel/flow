@@ -27,7 +27,7 @@ pub fn help_text(app: &App) -> String {
         format!(" [{}]", app.project_filter.join(","))
     };
     format!(
-        "h/l ←/→ focus  j/k ↑/↓ select  H/L move  a/n new  e edit  d del  Enter detail  r refresh  s sort({})  / search  p project{}  Esc/q quit",
+        "h/l ←/→ focus  j/k ↑/↓ select  H/L move  a/n new  e edit  d del  Enter detail  r refresh  s sort({})  / search  p project{}  P switch-project  Esc/q quit",
         app.sort_order.label(),
         filter_info,
     )
@@ -55,6 +55,7 @@ pub fn action_from_key(code: KeyCode) -> Option<Action> {
         KeyCode::Char('s') => Action::ToggleSort,
         KeyCode::Char('/') => Action::Search,
         KeyCode::Char('p') => Action::ProjectFilter,
+        KeyCode::Char('P') => Action::SwitchProject,
 
         _ => return None,
     })
@@ -252,12 +253,11 @@ pub fn render(f: &mut Frame, app: &App, render_area: Option<Rect>) {
             .constraints([
                 Constraint::Length(1),  // 0: card id
                 Constraint::Length(3),  // 1: title
-                Constraint::Length(3),  // 2: project
-                Constraint::Length(3),  // 3: depends on
-                Constraint::Length(3),  // 4: priority
-                Constraint::Length(3),  // 5: assignee
-                Constraint::Min(1),    // 6: description
-                Constraint::Length(1),  // 7: help
+                Constraint::Length(3),  // 2: depends on
+                Constraint::Length(3),  // 3: priority
+                Constraint::Length(3),  // 4: assignee
+                Constraint::Min(1),    // 5: description
+                Constraint::Length(1),  // 6: help
             ])
             .split(inner_area);
 
@@ -285,18 +285,6 @@ pub fn render(f: &mut Frame, app: &App, render_area: Option<Rect>) {
             chunks[1],
         );
 
-        // Project field
-        let project_style = if edit.focus == EditFocus::Project {
-            Style::default().fg(Color::Cyan)
-        } else {
-            Style::default()
-        };
-        f.render_widget(
-            Paragraph::new(edit.project.clone())
-                .block(Block::default().title("Project").borders(Borders::ALL).border_style(project_style)),
-            chunks[2],
-        );
-
         // Depends On field
         let depends_on_style = if edit.focus == EditFocus::DependsOn {
             Style::default().fg(Color::Cyan)
@@ -306,7 +294,7 @@ pub fn render(f: &mut Frame, app: &App, render_area: Option<Rect>) {
         f.render_widget(
             Paragraph::new(edit.depends_on.clone())
                 .block(Block::default().title("Depends On").borders(Borders::ALL).border_style(depends_on_style)),
-            chunks[3],
+            chunks[2],
         );
 
         // Priority selector
@@ -330,7 +318,7 @@ pub fn render(f: &mut Frame, app: &App, render_area: Option<Rect>) {
         f.render_widget(
             Paragraph::new(Line::from(prio_spans))
                 .block(Block::default().title("Priority").borders(Borders::ALL).border_style(prio_style)),
-            chunks[4],
+            chunks[3],
         );
 
         // Assignee field
@@ -342,7 +330,7 @@ pub fn render(f: &mut Frame, app: &App, render_area: Option<Rect>) {
         f.render_widget(
             Paragraph::new(edit.assignee.clone())
                 .block(Block::default().title("Assignee").borders(Borders::ALL).border_style(assignee_style)),
-            chunks[5],
+            chunks[4],
         );
 
         let desc_style = if edit.focus == EditFocus::Description {
@@ -350,20 +338,20 @@ pub fn render(f: &mut Frame, app: &App, render_area: Option<Rect>) {
         } else {
             Style::default()
         };
-        let inner_width = chunks[6].width.saturating_sub(2) as usize;
+        let inner_width = chunks[5].width.saturating_sub(2) as usize;
         let wrapped_desc = wrap_text(&edit.description, inner_width);
 
         f.render_widget(
             Paragraph::new(wrapped_desc.join("\n"))
                 .block(Block::default().title("Description").borders(Borders::ALL).border_style(desc_style)),
-            chunks[6],
+            chunks[5],
         );
 
         f.render_widget(
             Paragraph::new("Tab: switch field  \u{2190}/\u{2192}: priority  Enter: save  Esc: cancel")
                 .style(Style::default().fg(Color::DarkGray))
                 .alignment(ratatui::layout::Alignment::Center),
-            chunks[7],
+            chunks[6],
         );
 
         // Position cursor
@@ -374,29 +362,23 @@ pub fn render(f: &mut Frame, app: &App, render_area: Option<Rect>) {
                     chunks[1].y + 1,
                 ));
             }
-            EditFocus::Project => {
+            EditFocus::DependsOn => {
                 f.set_cursor_position((
                     chunks[2].x + 1 + edit.cursor_pos as u16,
                     chunks[2].y + 1,
                 ));
             }
-            EditFocus::DependsOn => {
-                f.set_cursor_position((
-                    chunks[3].x + 1 + edit.cursor_pos as u16,
-                    chunks[3].y + 1,
-                ));
-            }
             EditFocus::Assignee => {
                 f.set_cursor_position((
-                    chunks[5].x + 1 + edit.cursor_pos as u16,
-                    chunks[5].y + 1,
+                    chunks[4].x + 1 + edit.cursor_pos as u16,
+                    chunks[4].y + 1,
                 ));
             }
             EditFocus::Description => {
                 let (x, y) = calculate_visual_cursor_pos(&edit.description, edit.cursor_pos, inner_width);
                 f.set_cursor_position((
-                    chunks[6].x + 1 + x as u16,
-                    chunks[6].y + 1 + y as u16,
+                    chunks[5].x + 1 + x as u16,
+                    chunks[5].y + 1 + y as u16,
                 ));
             }
             EditFocus::Priority => {
@@ -434,7 +416,7 @@ pub fn render(f: &mut Frame, app: &App, render_area: Option<Rect>) {
         f.render_stateful_widget(list, area, &mut state);
     }
 
-    // Project selector modal (startup, when no tenant was configured)
+    // Project selector modal (startup picker and in-board switching)
     if let Some(ps) = &app.project_select_state {
         let area = centered(60, 60, f.area());
         f.render_widget(Clear, area);

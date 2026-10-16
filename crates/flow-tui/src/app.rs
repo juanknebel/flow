@@ -18,6 +18,7 @@ pub enum Action {
     ToggleSort,
     Search,
     ProjectFilter,
+    SwitchProject,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -26,15 +27,13 @@ pub enum EditFocus {
     Description,
     Priority,
     Assignee,
-    Project,
     DependsOn,
 }
 
 impl EditFocus {
     pub fn next(self) -> Self {
         match self {
-            EditFocus::Title => EditFocus::Project,
-            EditFocus::Project => EditFocus::DependsOn,
+            EditFocus::Title => EditFocus::DependsOn,
             EditFocus::DependsOn => EditFocus::Priority,
             EditFocus::Priority => EditFocus::Assignee,
             EditFocus::Assignee => EditFocus::Description,
@@ -51,7 +50,6 @@ pub struct EditState {
     pub description: String,
     pub priority: Priority,
     pub assignee: String,
-    pub project: String,
     pub depends_on: String,
     pub cursor_pos: usize,
     pub focus: EditFocus,
@@ -63,7 +61,6 @@ impl EditState {
             EditFocus::Title => &self.title,
             EditFocus::Description => &self.description,
             EditFocus::Assignee => &self.assignee,
-            EditFocus::Project => &self.project,
             EditFocus::DependsOn => &self.depends_on,
             EditFocus::Priority => "",
         }
@@ -74,7 +71,6 @@ impl EditState {
             EditFocus::Title => &mut self.title,
             EditFocus::Description => &mut self.description,
             EditFocus::Assignee => &mut self.assignee,
-            EditFocus::Project => &mut self.project,
             EditFocus::DependsOn => &mut self.depends_on,
             EditFocus::Priority => &mut self.title, // unused for priority, but must return something
         }
@@ -417,7 +413,9 @@ impl App {
         match a {
             Action::Quit => return true,
             Action::CloseOrQuit => {
-                if self.edit_state.is_some() {
+                if self.project_select_state.is_some() {
+                    self.project_select_state = None;
+                } else if self.edit_state.is_some() {
                     self.edit_state = None;
                 } else if self.project_filter_state.is_some() {
                     self.project_filter_state = None;
@@ -445,7 +443,7 @@ impl App {
                 self.sort_order = self.sort_order.toggle();
                 self.board.sort_cards_with(self.sort_order);
             }
-            Action::Refresh | Action::MoveLeft | Action::MoveRight | Action::Add | Action::Edit | Action::Search | Action::ProjectFilter => {}
+            Action::Refresh | Action::MoveLeft | Action::MoveRight | Action::Add | Action::Edit | Action::Search | Action::ProjectFilter | Action::SwitchProject => {}
         }
         false
     }
@@ -674,8 +672,7 @@ mod tests {
 
     #[test]
     fn edit_focus_cycles() {
-        assert_eq!(EditFocus::Title.next(), EditFocus::Project);
-        assert_eq!(EditFocus::Project.next(), EditFocus::DependsOn);
+        assert_eq!(EditFocus::Title.next(), EditFocus::DependsOn);
         assert_eq!(EditFocus::DependsOn.next(), EditFocus::Priority);
         assert_eq!(EditFocus::Priority.next(), EditFocus::Assignee);
         assert_eq!(EditFocus::Assignee.next(), EditFocus::Description);
