@@ -111,6 +111,7 @@ JIRA_BOARD_ID=123
 - `h` / `l` or `←` / `→` — focus column
 - `j` / `k` or `↑` / `↓` — select card
 - `P` — switch project (local)
+- `d` (in project picker) — delete project (type the code to confirm when it has cards)
 - `H` / `L` — move card left / right
 - `Enter` — toggle detail view
 - `r` — reload board
@@ -151,6 +152,9 @@ flow-cli --project acme move FLOW-1 in_progress
 
 # Delete a card permanently
 flow-cli --project acme delete FLOW-1
+
+# Delete a whole project (requires --confirm when it has cards)
+flow-cli --project oldproj delete-project --confirm oldproj
 
 # List column IDs
 flow-cli --project acme columns

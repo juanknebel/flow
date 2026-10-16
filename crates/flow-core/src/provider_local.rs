@@ -149,6 +149,25 @@ impl Provider for LocalProvider {
         is_all(&self.project)
     }
 
+    fn supports_project_filter(&self) -> bool {
+        is_all(&self.project)
+    }
+
+    fn project_card_count(&mut self, project: &str) -> Result<usize, ProviderError> {
+        store_db::project_card_count(&self.db_path, project)
+            .map_err(|e| map_err("project_card_count", &self.db_path, e))
+    }
+
+    fn delete_project(&mut self, project: &str) -> Result<usize, ProviderError> {
+        if is_all(project) {
+            return Err(ProviderError::Validation {
+                msg: "cannot delete the all-projects view".to_string(),
+            });
+        }
+        store_db::delete_project(&self.db_path, project)
+            .map_err(|e| map_err("delete_project", &self.db_path, e))
+    }
+
     fn create_card(&mut self, to_col_id: &str, _project: &str) -> Result<String, ProviderError> {
         if is_all(&self.project) {
             return Err(read_only());
@@ -525,6 +544,41 @@ mod tests {
         a.select_project("ALL").map_err(|e| e.to_string())?;
         assert!(a.is_read_only());
         assert!(!a.list_projects().map_err(|e| e.to_string())?.iter().any(|c| c.eq_ignore_ascii_case("all")));
+
+        cleanup(&db);
+        Ok(())
+    }
+
+    #[test]
+    fn project_filter_offered_only_in_all_view() {
+        let tenant = LocalProvider::new(PathBuf::from("/tmp/x.db"), "acme".to_string());
+        assert!(!tenant.supports_project_filter());
+        let all = LocalProvider::new(PathBuf::from("/tmp/x.db"), "all".to_string());
+        assert!(all.supports_project_filter());
+    }
+
+    #[test]
+    fn delete_project_removes_tenant() -> TestResult {
+        let db = tmp_db();
+        let mut a = LocalProvider::new(db.clone(), "aaa".to_string());
+        a.create_card("todo", "aaa").map_err(|e| e.to_string())?;
+        let mut z = LocalProvider::new(db.clone(), "zzz".to_string());
+        z.create_card("todo", "zzz").map_err(|e| e.to_string())?;
+
+        assert_eq!(a.project_card_count("aaa").map_err(|e| e.to_string())?, 1);
+        assert_eq!(a.delete_project("aaa").map_err(|e| e.to_string())?, 1);
+        assert_eq!(
+            a.list_projects().map_err(|e| e.to_string())?,
+            vec!["zzz".to_string()]
+        );
+        assert!(matches!(
+            a.delete_project("aaa").unwrap_err(),
+            ProviderError::NotFound { .. }
+        ));
+        assert!(matches!(
+            a.delete_project("all").unwrap_err(),
+            ProviderError::Validation { .. }
+        ));
 
         cleanup(&db);
         Ok(())

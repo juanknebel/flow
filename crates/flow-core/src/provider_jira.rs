@@ -599,6 +599,7 @@ mod tests {
         assert_eq!(provider.active_project(), None);
         assert!(!provider.needs_project_selection());
         assert!(!provider.is_read_only());
+        assert!(provider.supports_project_filter());
     }
 
     #[test]

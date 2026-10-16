@@ -18,7 +18,7 @@ use ratatui::{
 
 use flow_core::{Board, provider, model::Priority};
 use flow_tui::{
-    App, Action, EditState, EditFocus, SearchState, ProjectFilterState, ProjectSelectState,
+    App, Action, DeleteConfirm, EditState, EditFocus, SearchState, ProjectFilterState, ProjectSelectState,
     app::{parse_depends_on_field, format_depends_on_field},
     ui::render, ui::action_from_key,
 };
@@ -63,7 +63,7 @@ fn run_project_selector(
         if k.kind != KeyEventKind::Press {
             continue;
         }
-        match handle_project_select_key(&mut app, &mut *provider, k.code) {
+        match handle_project_select_key(&mut app, &mut *provider, k.code, None) {
             SelectOutcome::Selected(_) => return Ok(true),
             SelectOutcome::Cancelled => return Ok(false),
             SelectOutcome::Continue => {}
@@ -88,16 +88,75 @@ enum SelectOutcome {
     Continue,
 }
 
+/// Applies a tenant-deletion outcome: refreshes the picker list and reports.
+fn finish_project_delete(
+    banner: &mut Option<String>,
+    ps: &mut ProjectSelectState,
+    code: &str,
+    result: Result<usize, flow_core::ProviderError>,
+) {
+    match result {
+        Ok(n) => {
+            ps.remove_project(code);
+            ps.cancel_delete();
+            *banner = Some(if n == 0 {
+                format!("Deleted empty project {code}")
+            } else {
+                format!("Deleted project {code} ({n} cards)")
+            });
+        }
+        Err(e) => {
+            ps.cancel_delete();
+            *banner = Some(format!("Delete failed: {e}"));
+        }
+    }
+}
+
 /// Shared key handling for the tenant picker, used both by the startup
-/// selector and by in-board project switching.
+/// selector and by in-board project switching. `active` is the open tenant,
+/// if any, which cannot be deleted.
 fn handle_project_select_key(
     app: &mut App,
     provider: &mut Box<dyn provider::Provider>,
     code: crossterm::event::KeyCode,
+    active: Option<&str>,
 ) -> SelectOutcome {
     let Some(ps) = app.project_select_state.as_mut() else {
         return SelectOutcome::Cancelled;
     };
+    // A pending deletion confirm captures all keys until resolved.
+    if ps.delete_confirm.is_some() {
+        let typed = matches!(ps.delete_confirm, Some(DeleteConfirm::Typed { .. }));
+        match code {
+            crossterm::event::KeyCode::Esc => ps.cancel_delete(),
+            crossterm::event::KeyCode::Char('q') if !typed => ps.cancel_delete(),
+            crossterm::event::KeyCode::Char('y') | crossterm::event::KeyCode::Char('Y') if !typed => {
+                if let Some(code) = ps.pending_code() {
+                    let res = provider.delete_project(&code);
+                    finish_project_delete(&mut app.banner, ps, &code, res);
+                }
+            }
+            crossterm::event::KeyCode::Char('n') | crossterm::event::KeyCode::Char('N') if !typed => {
+                ps.cancel_delete()
+            }
+            crossterm::event::KeyCode::Enter if typed => {
+                if ps.typed_matches() {
+                    if let Some(code) = ps.pending_code() {
+                        let res = provider.delete_project(&code);
+                        finish_project_delete(&mut app.banner, ps, &code, res);
+                    }
+                } else {
+                    app.banner = Some("Code does not match, try again or Esc".to_string());
+                }
+            }
+            crossterm::event::KeyCode::Char(c) if typed => ps.confirm_insert_char(c),
+            crossterm::event::KeyCode::Backspace if typed => ps.confirm_delete_prev(),
+            crossterm::event::KeyCode::Left if typed => ps.confirm_move_cursor_left(),
+            crossterm::event::KeyCode::Right if typed => ps.confirm_move_cursor_right(),
+            _ => {}
+        }
+        return SelectOutcome::Continue;
+    }
     if ps.input_mode {
         match code {
             crossterm::event::KeyCode::Esc => ps.input_mode = false,
@@ -132,6 +191,21 @@ fn handle_project_select_key(
         }
         crossterm::event::KeyCode::Tab | crossterm::event::KeyCode::Char('n') => {
             ps.input_mode = true;
+            SelectOutcome::Continue
+        }
+        crossterm::event::KeyCode::Char('d') => {
+            if let Some(code) = ps.projects.get(ps.cursor).cloned() {
+                if code == "all" {
+                    app.banner = Some("The all-projects view cannot be deleted".to_string());
+                } else if Some(code.as_str()) == active {
+                    app.banner = Some("Cannot delete the open project".to_string());
+                } else {
+                    match provider.project_card_count(&code) {
+                        Ok(n) => ps.begin_delete(code, n),
+                        Err(e) => app.banner = Some(format!("Delete failed: {e}")),
+                    }
+                }
+            }
             SelectOutcome::Continue
         }
         crossterm::event::KeyCode::Enter => {
@@ -241,7 +315,7 @@ fn run_tui(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> io::Result<
             if let Event::Key(k) = event::read()? {
                 if k.kind == KeyEventKind::Press {
                     if app.project_select_state.is_some() {
-                        match handle_project_select_key(&mut app, &mut provider, k.code) {
+                        match handle_project_select_key(&mut app, &mut provider, k.code, active_project.as_deref()) {
                             SelectOutcome::Selected(code) => {
                                 app.project_select_state = None;
                                 app.project_filter.clear();
@@ -416,7 +490,7 @@ fn run_tui(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> io::Result<
                             crossterm::event::KeyCode::Esc => {
                                 app.project_filter_state = None;
                             }
-                            crossterm::event::KeyCode::Enter | crossterm::event::KeyCode::Char(' ') => {
+                            crossterm::event::KeyCode::Char(' ') => {
                                 if let Some(pf) = app.project_filter_state.as_mut() {
                                     if pf.cursor < pf.projects.len() {
                                         pf.selected[pf.cursor] = !pf.selected[pf.cursor];
@@ -446,7 +520,7 @@ fn run_tui(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> io::Result<
                                     }
                                 }
                             }
-                            crossterm::event::KeyCode::Tab => {
+                            crossterm::event::KeyCode::Tab | crossterm::event::KeyCode::Enter => {
                                 // Apply filter and close
                                 if let Some(pf) = app.project_filter_state.take() {
                                     let selected: Vec<String> = pf.projects.iter()
@@ -577,6 +651,10 @@ fn run_tui(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> io::Result<
                                 app.search_state = Some(SearchState::new());
                             }
                             Action::ProjectFilter => {
+                                if !provider.supports_project_filter() {
+                                    app.banner = Some("Project filter is only available in the all-projects view".to_string());
+                                    continue;
+                                }
                                 // Collect all unique projects from the full board
                                 let mut all_projects = match provider.load_board() {
                                     Ok(b) => b.projects(),

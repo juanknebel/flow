@@ -214,6 +214,20 @@ pub struct ProjectFilterState {
     pub cursor: usize,
 }
 
+/// Pending tenant deletion inside the project picker.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum DeleteConfirm {
+    /// Empty tenant: single y/n confirm.
+    Empty(String),
+    /// Tenant with cards: re-confirm by typing the code.
+    Typed {
+        code: String,
+        count: usize,
+        input: String,
+        cursor_pos: usize,
+    },
+}
+
 /// Startup tenant picker, shown when no project was configured.
 /// Lists existing tenants; the input line creates a new one.
 pub struct ProjectSelectState {
@@ -226,6 +240,8 @@ pub struct ProjectSelectState {
     pub cursor_pos: usize,
     /// Whether the input line (vs the list) has focus.
     pub input_mode: bool,
+    /// Pending deletion confirm, if any.
+    pub delete_confirm: Option<DeleteConfirm>,
 }
 
 impl ProjectSelectState {
@@ -236,6 +252,103 @@ impl ProjectSelectState {
             cursor: 0,
             input: String::new(),
             cursor_pos: 0,
+            delete_confirm: None,
+        }
+    }
+
+    /// Starts a deletion confirm: plain y/n for empty tenants, type-the-code
+    /// for tenants with cards.
+    pub fn begin_delete(&mut self, code: String, count: usize) {
+        self.delete_confirm = Some(if count == 0 {
+            DeleteConfirm::Empty(code)
+        } else {
+            DeleteConfirm::Typed {
+                code,
+                count,
+                input: String::new(),
+                cursor_pos: 0,
+            }
+        });
+    }
+
+    pub fn cancel_delete(&mut self) {
+        self.delete_confirm = None;
+    }
+
+    /// Whether the typed re-confirmation matches the tenant code
+    /// (trimmed, case-sensitive).
+    pub fn typed_matches(&self) -> bool {
+        match &self.delete_confirm {
+            Some(DeleteConfirm::Typed { code, input, .. }) => input.trim() == code,
+            _ => false,
+        }
+    }
+
+    /// Tenant code of the pending deletion confirm, if any.
+    pub fn pending_code(&self) -> Option<String> {
+        match &self.delete_confirm {
+            Some(DeleteConfirm::Empty(code)) => Some(code.clone()),
+            Some(DeleteConfirm::Typed { code, .. }) => Some(code.clone()),
+            None => None,
+        }
+    }
+
+    /// Removes a tenant from the list and clamps the cursor.
+    pub fn remove_project(&mut self, code: &str) {
+        self.projects.retain(|p| p != code);
+        if self.projects.is_empty() {
+            self.input_mode = true;
+        } else if self.cursor >= self.projects.len() {
+            self.cursor = self.projects.len() - 1;
+        }
+    }
+
+    pub fn confirm_insert_char(&mut self, c: char) {
+        let Some(DeleteConfirm::Typed { input, cursor_pos, .. }) = self.delete_confirm.as_mut() else {
+            return;
+        };
+        if *cursor_pos >= input.len() {
+            input.push(c);
+        } else {
+            input.insert(*cursor_pos, c);
+        }
+        *cursor_pos += c.len_utf8();
+    }
+
+    pub fn confirm_delete_prev(&mut self) {
+        let Some(DeleteConfirm::Typed { input, cursor_pos, .. }) = self.delete_confirm.as_mut() else {
+            return;
+        };
+        if *cursor_pos > 0 {
+            let pos = *cursor_pos;
+            if let Some((idx, _)) = input.char_indices().filter(|(i, _)| *i < pos).last() {
+                input.remove(idx);
+                *cursor_pos = idx;
+            }
+        }
+    }
+
+    pub fn confirm_move_cursor_left(&mut self) {
+        let Some(DeleteConfirm::Typed { input, cursor_pos, .. }) = self.delete_confirm.as_mut() else {
+            return;
+        };
+        if *cursor_pos > 0 {
+            let pos = *cursor_pos;
+            if let Some((idx, _)) = input.char_indices().filter(|(i, _)| *i < pos).last() {
+                *cursor_pos = idx;
+            }
+        }
+    }
+
+    pub fn confirm_move_cursor_right(&mut self) {
+        let Some(DeleteConfirm::Typed { input, cursor_pos, .. }) = self.delete_confirm.as_mut() else {
+            return;
+        };
+        let pos = *cursor_pos;
+        if let Some((idx, _)) = input.char_indices().filter(|(i, _)| *i > pos).next() {
+            *cursor_pos = idx;
+        } else if pos < input.len() {
+            *cursor_pos = input.len();
         }
     }
 
@@ -837,6 +950,45 @@ mod tests {
         let mut empty = ProjectSelectState::new(vec![]);
         empty.move_down();
         assert_eq!(empty.cursor, 0);
+    }
+
+    #[test]
+    fn delete_confirm_empty_vs_typed() {
+        let mut ps = ProjectSelectState::new(vec!["a".to_string()]);
+        assert_eq!(ps.pending_code(), None);
+
+        ps.begin_delete("a".to_string(), 0);
+        assert_eq!(ps.pending_code(), Some("a".to_string()));
+        assert!(!ps.typed_matches());
+        ps.cancel_delete();
+        assert_eq!(ps.pending_code(), None);
+
+        ps.begin_delete("abc".to_string(), 3);
+        assert_eq!(ps.pending_code(), Some("abc".to_string()));
+        assert!(!ps.typed_matches());
+        for c in "ab".chars() {
+            ps.confirm_insert_char(c);
+        }
+        assert!(!ps.typed_matches());
+        ps.confirm_insert_char('c');
+        assert!(ps.typed_matches());
+        // Case-sensitive.
+        ps.confirm_delete_prev();
+        ps.confirm_insert_char('C');
+        assert!(!ps.typed_matches());
+    }
+
+    #[test]
+    fn remove_project_clamps_cursor() {
+        let mut ps = ProjectSelectState::new(vec!["a".to_string(), "b".to_string()]);
+        ps.cursor = 1;
+        ps.remove_project("b");
+        assert_eq!(ps.projects, vec!["a".to_string()]);
+        assert_eq!(ps.cursor, 0);
+
+        ps.remove_project("a");
+        assert!(ps.projects.is_empty());
+        assert!(ps.input_mode);
     }
 
     #[test]

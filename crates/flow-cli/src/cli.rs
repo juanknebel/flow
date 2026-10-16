@@ -60,7 +60,8 @@ EXAMPLES:
   flow-cli --project acme edit FLOW-5 --depends-on FLOW-1,FLOW-2      # comma-separated
   flow-cli --project acme edit FLOW-5 --depends-on FLOW-1 --depends-on FLOW-2  # repeated flag
   flow-cli --project acme edit FLOW-5 --depends-on \"\"                  # clear all dependencies
-  flow-cli --project acme move FLOW-1 done"
+  flow-cli --project acme move FLOW-1 done
+  flow-cli --project oldproj delete-project --confirm oldproj"
 )]
 pub struct Cli {
     #[command(subcommand)]
@@ -146,6 +147,13 @@ pub enum Command {
     Delete {
         /// Card identifier to delete
         card_id: String,
+    },
+
+    /// Delete a project tenant and all its cards permanently
+    DeleteProject {
+        /// Required when the project has cards: must match the --project code
+        #[arg(long)]
+        confirm: Option<String>,
     },
 
     /// List column ids, titles, and card counts
@@ -273,6 +281,30 @@ pub fn run(cmd: Command, fmt: Format, project: Option<&str>) -> io::Result<()> {
                 "{}",
                 format::format_result(
                     &[("action", "delete"), ("card_id", &card_id)],
+                    fmt,
+                ).map_err(io::Error::other)?
+            );
+        }
+        Command::DeleteProject { confirm } => {
+            if tenant.eq_ignore_ascii_case("all") {
+                return Err(io::Error::other("cannot delete the all-projects view"));
+            }
+            let count = prov
+                .project_card_count(&tenant)
+                .map_err(|e| io::Error::other(e.to_string()))?;
+            if count > 0 && confirm.as_deref().map(str::trim) != Some(tenant.as_str()) {
+                return Err(io::Error::other(format!(
+                    "project {tenant} has {count} cards: repeat with --confirm {tenant} to delete everything"
+                )));
+            }
+            let deleted = prov
+                .delete_project(&tenant)
+                .map_err(|e| io::Error::other(e.to_string()))?;
+            let deleted_str = deleted.to_string();
+            println!(
+                "{}",
+                format::format_result(
+                    &[("action", "delete-project"), ("project", &tenant), ("cards_deleted", &deleted_str)],
                     fmt,
                 ).map_err(io::Error::other)?
             );

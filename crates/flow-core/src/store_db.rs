@@ -250,6 +250,49 @@ fn load_cards_all(conn: &Connection, col_id: &str) -> Result<Vec<Card>, StoreErr
     Ok(cards)
 }
 
+/// Number of cards in a tenant (0 for unknown tenants).
+pub fn project_card_count(db_path: &Path, project: &str) -> Result<usize, StoreError> {
+    let conn = open_db(db_path)?;
+    let count: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM cards WHERE project_code = ?1",
+        params![project],
+        |row| row.get(0),
+    )?;
+    Ok(count as usize)
+}
+
+/// Deletes a tenant and everything in it (cards, dependencies, columns),
+/// in a single transaction. Returns the number of cards deleted.
+/// Unknown tenants (and the reserved `all` view) are rejected.
+pub fn delete_project(db_path: &Path, project: &str) -> Result<usize, StoreError> {
+    if project.eq_ignore_ascii_case("all") {
+        return Err(StoreError::NotFound(project.to_string()));
+    }
+    let mut conn = open_db(db_path)?;
+    let tx = conn.transaction()?;
+    let exists: Option<String> = tx
+        .query_row(
+            "SELECT code FROM projects WHERE code = ?1",
+            params![project],
+            |row| row.get(0),
+        )
+        .optional()?;
+    if exists.is_none() {
+        return Err(StoreError::NotFound(project.to_string()));
+    }
+    let cards: i64 = tx.query_row(
+        "SELECT COUNT(*) FROM cards WHERE project_code = ?1",
+        params![project],
+        |row| row.get(0),
+    )?;
+    tx.execute("DELETE FROM card_deps WHERE project_code = ?1", params![project])?;
+    tx.execute("DELETE FROM cards WHERE project_code = ?1", params![project])?;
+    tx.execute("DELETE FROM columns WHERE project_code = ?1", params![project])?;
+    tx.execute("DELETE FROM projects WHERE code = ?1", params![project])?;
+    tx.commit()?;
+    Ok(cards as usize)
+}
+
 fn load_deps(conn: &Connection, project: &str, card_id: &str) -> Result<Vec<String>, StoreError> {
     let mut dep_stmt = conn.prepare(
         "SELECT depends_on FROM card_deps WHERE project_code = ?1 AND card_id = ?2 ORDER BY depends_on",
@@ -647,6 +690,41 @@ mod tests {
         assert_eq!(board.columns[0].cards.len(), 2);
         assert_eq!(board.columns[3].cards.len(), 1);
         assert!(list_projects(&db).map_err(|e| format!("{e:?}"))?.iter().all(|c| c != "all"));
+
+        cleanup(&db);
+        Ok(())
+    }
+
+    #[test]
+    fn delete_project_cascades_everything() -> TestResult {
+        let db = tmp_db();
+        let a1 = create_card(&db, "aaa", "todo").map_err(|e| format!("{e:?}"))?;
+        let a2 = create_card(&db, "aaa", "todo").map_err(|e| format!("{e:?}"))?;
+        update_card(&db, "aaa", &a2, "t", "", Priority::Low, "", &[a1.clone()])
+            .map_err(|e| format!("{e:?}"))?;
+        let z1 = create_card(&db, "zzz", "done").map_err(|e| format!("{e:?}"))?;
+
+        assert_eq!(project_card_count(&db, "aaa").map_err(|e| format!("{e:?}"))?, 2);
+        assert_eq!(project_card_count(&db, "zzz").map_err(|e| format!("{e:?}"))?, 1);
+        assert_eq!(project_card_count(&db, "nope").map_err(|e| format!("{e:?}"))?, 0);
+
+        assert_eq!(delete_project(&db, "aaa").map_err(|e| format!("{e:?}"))?, 2);
+        assert_eq!(
+            list_projects(&db).map_err(|e| format!("{e:?}"))?,
+            vec!["zzz".to_string()]
+        );
+        // Other tenants untouched.
+        let board = load_board(&db, "zzz").map_err(|e| format!("{e:?}"))?;
+        assert!(board.find_card(&z1).is_some());
+
+        assert!(matches!(
+            delete_project(&db, "aaa"),
+            Err(StoreError::NotFound(_))
+        ));
+        assert!(matches!(
+            delete_project(&db, "all"),
+            Err(StoreError::NotFound(_))
+        ));
 
         cleanup(&db);
         Ok(())

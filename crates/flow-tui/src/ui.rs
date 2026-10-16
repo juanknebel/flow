@@ -7,7 +7,7 @@ use ratatui::{
 };
 use crossterm::event::KeyCode;
 
-use crate::app::{Action, App, EditFocus, SearchState};
+use crate::app::{Action, App, DeleteConfirm, EditFocus, SearchState};
 use flow_core::model::Priority;
 
 fn priority_color(p: Priority) -> Color {
@@ -391,6 +391,10 @@ pub fn render(f: &mut Frame, app: &App, render_area: Option<Rect>) {
     if let Some(pf) = &app.project_filter_state {
         let area = centered(50, 50, f.area());
         f.render_widget(Clear, area);
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Min(3), Constraint::Length(1)])
+            .split(area);
 
         let mut items: Vec<ListItem> = Vec::new();
         for (i, proj_name) in pf.projects.iter().enumerate() {
@@ -413,7 +417,14 @@ pub fn render(f: &mut Frame, app: &App, render_area: Option<Rect>) {
 
         let mut state = ListState::default();
         state.select(Some(pf.cursor));
-        f.render_stateful_widget(list, area, &mut state);
+        f.render_stateful_widget(list, chunks[0], &mut state);
+        f.render_widget(
+            Paragraph::new(Span::styled(
+                "j/k move  Space toggle  Enter/Tab apply  a all/none  Esc cancel",
+                Style::default().fg(Color::DarkGray),
+            )),
+            chunks[1],
+        );
     }
 
     // Project selector modal (startup picker and in-board switching)
@@ -454,21 +465,40 @@ pub fn render(f: &mut Frame, app: &App, render_area: Option<Rect>) {
         state.select(if ps.projects.is_empty() { None } else { Some(ps.cursor) });
         f.render_stateful_widget(list, chunks[0], &mut state);
 
-        let input = Paragraph::new(ps.input.as_str()).block(
+        let (input_title, input_text) = match &ps.delete_confirm {
+            Some(DeleteConfirm::Empty(code)) => (
+                "Delete project".to_string(),
+                format!("Delete empty project '{code}'? (y/n)"),
+            ),
+            Some(DeleteConfirm::Typed { code, count, input, .. }) => (
+                format!("Type '{code}' to delete {count} cards"),
+                input.clone(),
+            ),
+            None => ("New project (n)".to_string(), ps.input.clone()),
+        };
+        let input_active = ps.input_mode && ps.delete_confirm.is_none()
+            || matches!(&ps.delete_confirm, Some(DeleteConfirm::Typed { .. }));
+        let input = Paragraph::new(input_text.as_str()).block(
             Block::default()
-                .title("New project (n)")
+                .title(input_title)
                 .borders(Borders::ALL)
-                .border_style(Style::default().fg(if ps.input_mode { Color::Cyan } else { Color::Gray })),
+                .border_style(Style::default().fg(if input_active { Color::Cyan } else { Color::Gray })),
         );
         f.render_widget(input, chunks[1]);
-        if ps.input_mode {
-            f.set_cursor_position((chunks[1].x + 1 + ps.cursor_pos as u16, chunks[1].y + 1));
+        let cursor_pos = match &ps.delete_confirm {
+            Some(DeleteConfirm::Typed { cursor_pos, .. }) => Some(*cursor_pos),
+            _ if ps.input_mode => Some(ps.cursor_pos),
+            _ => None,
+        };
+        if let Some(pos) = cursor_pos {
+            f.set_cursor_position((chunks[1].x + 1 + pos as u16, chunks[1].y + 1));
         }
 
-        let hints = if ps.input_mode {
-            "Enter create  Esc back to list"
-        } else {
-            "j/k move  Enter open  n new  Esc/q quit"
+        let hints = match &ps.delete_confirm {
+            Some(DeleteConfirm::Empty(_)) => "y confirm  n/Esc cancel",
+            Some(DeleteConfirm::Typed { .. }) => "Type the code, Enter confirm  Esc cancel",
+            None if ps.input_mode => "Enter create  Esc back to list",
+            None => "j/k move  Enter open  n new  d delete  Esc/q quit",
         };
         f.render_widget(
             Paragraph::new(Span::styled(hints, Style::default().fg(Color::DarkGray))),

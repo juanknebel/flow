@@ -96,6 +96,27 @@ pub trait Provider {
         false
     }
 
+    /// Whether offering the project filter makes sense (multi-project
+    /// boards: Jira, or the local all-projects union).
+    fn supports_project_filter(&self) -> bool {
+        true
+    }
+
+    /// Number of cards in a tenant.
+    fn project_card_count(&mut self, _project: &str) -> Result<usize, ProviderError> {
+        Err(ProviderError::Parse {
+            msg: "project deletion not supported by current provider".to_string(),
+        })
+    }
+
+    /// Deletes a tenant and everything in it. Returns the number of cards
+    /// deleted. Callers confirm with the user first.
+    fn delete_project(&mut self, _project: &str) -> Result<usize, ProviderError> {
+        Err(ProviderError::Parse {
+            msg: "project deletion not supported by current provider".to_string(),
+        })
+    }
+
     fn update_card(&mut self, _card_id: &str, _title: &str, _description: &str, _priority: Priority, _assignee: &str, _project: &str, _depends_on: &[String]) -> Result<(), ProviderError> {
         Err(ProviderError::Parse {
             msg: "update_card not supported by current provider".to_string(),
