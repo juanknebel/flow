@@ -3,11 +3,12 @@ name = "flow-core"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-description = "Core library for flow: models, providers, formatters, and filesystem storage."
+description = "Core library for flow: models, providers, formatters, and SQLite storage."
 
 [dependencies]
 clap = { workspace = true, optional = true }
 reqwest = { workspace = true }
+rusqlite = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 

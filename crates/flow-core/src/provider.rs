@@ -20,6 +20,11 @@ pub enum ProviderError {
     Validation {
         msg: String,
     },
+    /// The SQLite backend failed (local provider only).
+    Db {
+        op: String,
+        msg: String,
+    },
 }
 
 impl fmt::Display for ProviderError {
@@ -31,6 +36,7 @@ impl fmt::Display for ProviderError {
                 write!(f, "{op} failed for {}: {source}", path.display())
             }
             ProviderError::Validation { msg } => write!(f, "validation error: {msg}"),
+            ProviderError::Db { op, msg } => write!(f, "{op} failed: {msg}"),
         }
     }
 }
@@ -51,12 +57,6 @@ pub trait Provider {
     fn create_card(&mut self, _to_col_id: &str, _project: &str) -> Result<String, ProviderError> {
         Err(ProviderError::Parse {
             msg: "create_card not supported by current provider".to_string(),
-        })
-    }
-
-    fn card_path(&self, _card_id: &str) -> Result<PathBuf, ProviderError> {
-        Err(ProviderError::Parse {
-            msg: "edit_card not supported by current provider".to_string(),
         })
     }
 

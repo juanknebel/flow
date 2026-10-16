@@ -92,7 +92,7 @@ pub fn render(f: &mut Frame, app: &App, render_area: Option<Rect>) {
 
     if app.board.columns.is_empty() {
         f.render_widget(
-            Paragraph::new("No columns found. Check board.txt.")
+            Paragraph::new("No columns found.")
                 .block(Block::default().borders(Borders::ALL)),
             main,
         );

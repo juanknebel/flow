@@ -130,10 +130,8 @@ fn run_tui(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> io::Result<
                                 }
                             }
                             crossterm::event::KeyCode::Enter => {
-                                if edit.project.trim().is_empty() {
-                                    app.banner = Some("Project is required".to_string());
-                                    continue;
-                                }
+                                // The local backend assigns the active tenant
+                                // as the card project; the field is advisory.
                                 let is_new = edit.is_new;
                                 let col_id = edit.col_id.clone();
                                 let title = edit.title.clone();
@@ -144,7 +142,7 @@ fn run_tui(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> io::Result<
                                 let depends_on = parse_depends_on_field(&edit.depends_on);
 
                                 if is_new {
-                                    // Create card on disk with project-based ID
+                                    // Create card in the active tenant (ID prefixed by tenant code)
                                     match provider.create_card(&col_id, &project) {
                                         Ok(card_id) => {
                                             if let Err(e) = provider.update_card(&card_id, &title, &description, priority, &assignee, &project, &depends_on) {

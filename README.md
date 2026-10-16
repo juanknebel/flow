@@ -15,10 +15,10 @@ Opening a browser just to move an issue is slow and breaks focus.
 ## Features
 - **Standalone CLI & TUI**: Powerful interactive board (`flow`) and scriptable CLI (`flow-cli`).
 - **Reusable Library**: Exported components, models, and UI logic for integration into other Rust TUI apps.
-- **Multiple Providers**: Local filesystem (Markdown-based) and Jira Cloud support.
+- **Multiple Providers**: Local SQLite (single `.db` file, multitenant by project code) and Jira Cloud support.
 - **Keyboard-first**: One-keystroke transitions (`H` / `L`), `hjkl` and arrow-key navigation.
 - **Card Priority**: Color-coded priority levels (Low, Medium, High, Bug, Wishlist) visible on the board and editable in the popup. Cards are automatically sorted by priority (Bug → High → Medium → Low → Wishlist), then alphabetically by title.
-- **Card Assignee**: Assign cards to team members (email or user id) via CLI (`--assignee`) or the TUI edit popup. Stored in card frontmatter.
+- **Card Assignee**: Assign cards to team members (email or user id) via CLI (`--assignee`) or the TUI edit popup.
 - **Integrated Editing**: Create/edit cards directly in an integrated popup with full cursor support, word wrapping, and familiar shortcuts.
 - **Clean Visuals**: Terminal-native design powered by `ratatui` with responsive layouts.
 
@@ -28,7 +28,7 @@ Cargo workspace with 4 crates:
 
 ```
 crates/
-  flow-core/    # Core library: models, providers, formatters, filesystem storage
+  flow-core/    # Core library: models, providers, formatters, SQLite storage
   flow-tui/     # TUI library: app state, rendering, key handling
   flow/         # Binary: TUI launcher
   flow-cli/     # Binary: CLI commands
@@ -63,43 +63,30 @@ terminal.draw(|f| {
 ```
 
 ## Demo / Local mode
-`flow` runs in **demo mode by default**.
+`flow` runs in **local mode by default**, backed by SQLite.
 
-Demo data is loaded from files on disk and can be edited directly.
-This makes the demo representative of real usage, not a hardcoded example.
+One database file holds every tenant. Rows are partitioned by project
+code: each tenant sees only its own board (columns + cards).
 
-Default demo board location:
+Default database location:
 ```
-boards/demo/
+~/.config/flow/flow.db
 ```
 
-To use a persistent local board, point `FLOW_BOARD_PATH` at the board directory:
+To use another database file, point `FLOW_BOARD_PATH` at it (a directory
+keeps working too: `flow.db` is created inside it):
 ```bash
-FLOW_BOARD_PATH=/path/to/board flow
+FLOW_BOARD_PATH=/path/to/board.db flow
 ```
 
-Local boards default to:
-```
-~/.config/flow/boards/default
-```
-
-### Card file format
-Each card is a Markdown file with optional YAML frontmatter for priority and assignee:
-```markdown
----
-priority: HIGH
-assignee: user@example.com
----
-# Card title
-
-Description body
-```
-Valid priorities: `LOW`, `MEDIUM`, `HIGH`, `BUG`, `WISHLIST`. Files without frontmatter default to `MEDIUM`.
-
-To migrate existing cards, run the included script:
+To select the tenant, set `FLOW_PROJECT` (default: `default`):
 ```bash
-./scripts/migrate-priority.sh /path/to/board
+FLOW_PROJECT=acme flow
 ```
+
+`FLOW_PROJECT=demo` seeds a demo board with example cards on first use.
+
+Valid priorities: `LOW`, `MEDIUM`, `HIGH`, `BUG`, `WISHLIST`.
 
 ## Jira mode
 To load issues from Jira, set:
@@ -118,7 +105,7 @@ JIRA_BOARD_ID=123
 - `j` / `k` or `↑` / `↓` — select card
 - `H` / `L` — move card left / right
 - `Enter` — toggle detail view
-- `r` — reload board from disk
+- `r` — reload board
 - `Esc` — close popup / cancel / quit
 - `q` — quit
 

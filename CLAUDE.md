@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-`flow` is a keyboard-first terminal Kanban board built in Rust. It has two provider backends: local filesystem and Jira. The TUI uses ratatui/crossterm.
+`flow` is a keyboard-first terminal Kanban board built in Rust. It has two provider backends: local SQLite and Jira. The TUI uses ratatui/crossterm.
 
 ## Build and run
 
@@ -20,8 +20,9 @@ cargo install --path crates/flow-cli  # install CLI binary
 
 ## Environment variables
 
-- `FLOW_PROVIDER=local|jira` — selects backend (default: local/demo)
-- `FLOW_BOARD_PATH=/path` — overrides board directory for local mode
+- `FLOW_PROVIDER=local|jira` — selects backend (default: local)
+- `FLOW_BOARD_PATH=/path` — overrides the SQLite file for local mode (a directory keeps working: `flow.db` is created inside it; default: `~/.config/flow/flow.db`)
+- `FLOW_PROJECT=code` — selects the tenant in local mode (default: `default`; `demo` seeds a demo board on first use)
 - Jira mode requires: `JIRA_BASE_URL`, `JIRA_EMAIL`, `JIRA_API_TOKEN`, `JIRA_BOARD_ID`
 
 ## Architecture
@@ -31,9 +32,9 @@ Cargo workspace (edition 2024) with 4 crates under `crates/`:
 - **`flow-core`** (library) — Core logic shared by TUI and CLI:
   - `model.rs` — Data types: `Board`, `Column`, `Card`, `Priority`.
   - `provider.rs` — `Provider` trait and `from_env()` factory.
-  - `provider_local.rs` — Local filesystem provider, delegates to `store_fs`.
+  - `provider_local.rs` — Local SQLite provider (single `.db` file, multitenant by project code), delegates to `store_db`.
   - `provider_jira.rs` — Jira REST API provider.
-  - `store_fs.rs` — Filesystem I/O for boards and cards.
+  - `store_db.rs` — SQLite storage: schema, CRUD partitioned by tenant, demo seed.
   - `format.rs` — Output formatters (plain, json, xml, csv, table, markdown).
 
 - **`flow-tui`** (library) — TUI-specific components:
@@ -56,16 +57,16 @@ Defined once in root `Cargo.toml` under `[workspace.package]`. All crates inheri
 
 ## Task management
 
-This project uses `flow` itself as its Kanban task board. The project board lives in `./.board` (gitignored).
+This project uses `flow` itself as its Kanban task board. The project board lives in `./.board/flow.db` (gitignored), tenant `FLOW_PROJECT=flow`.
 
 ```bash
-FLOW_BOARD_PATH=./.board flow-cli list             # list all cards
-FLOW_BOARD_PATH=./.board flow-cli columns          # list columns
-FLOW_BOARD_PATH=./.board flow-cli show <card_id>   # show card details
-FLOW_BOARD_PATH=./.board flow-cli create <col> "title" --priority high
-FLOW_BOARD_PATH=./.board flow-cli move <card_id> <col>
-FLOW_BOARD_PATH=./.board flow-cli edit <card_id> --title "new title"
-FLOW_BOARD_PATH=./.board flow-cli delete <card_id>
+FLOW_BOARD_PATH=./.board FLOW_PROJECT=flow flow-cli list             # list all cards
+FLOW_BOARD_PATH=./.board FLOW_PROJECT=flow flow-cli columns          # list columns
+FLOW_BOARD_PATH=./.board FLOW_PROJECT=flow flow-cli show <card_id>   # show card details
+FLOW_BOARD_PATH=./.board FLOW_PROJECT=flow flow-cli create <col> "title" --priority high
+FLOW_BOARD_PATH=./.board FLOW_PROJECT=flow flow-cli move <card_id> <col>
+FLOW_BOARD_PATH=./.board FLOW_PROJECT=flow flow-cli edit <card_id> --title "new title"
+FLOW_BOARD_PATH=./.board FLOW_PROJECT=flow flow-cli delete <card_id>
 ```
 
 Use `flow-cli` for board management and `flow` to launch the TUI. Use this board to track tasks, bugs, and features for the project.

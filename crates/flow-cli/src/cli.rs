@@ -5,7 +5,6 @@ use clap::{Parser, Subcommand};
 use flow_core::format::{self, Format};
 use flow_core::model::Priority;
 use flow_core::provider;
-use flow_core::store_fs;
 
 #[derive(Parser)]
 #[command(
@@ -41,11 +40,15 @@ OUTPUT:
 
 PROVIDERS:
   The board backend is selected via environment variables:
-    FLOW_PROVIDER=local   Local filesystem (default). Board path set by
-                          FLOW_BOARD_PATH or defaults to ~/.config/flow/boards/default.
+    FLOW_PROVIDER=local   SQLite (default). One database file for the whole
+                          app, set by FLOW_BOARD_PATH (a .db file, or a
+                          directory holding flow.db); defaults to
+                          ~/.config/flow/flow.db. Every tenant lives in that
+                          file; FLOW_PROJECT selects the tenant (default
+                          \"default\"). FLOW_PROJECT=demo seeds a demo board
+                          on first use.
     FLOW_PROVIDER=jira    Jira Cloud. Requires JIRA_BASE_URL, JIRA_EMAIL,
                           JIRA_API_TOKEN, and JIRA_BOARD_ID.
-  Without FLOW_PROVIDER, a built-in demo board is used.
 
 EXAMPLES:
   flow-cli list -f json
@@ -105,9 +108,10 @@ pub enum Command {
         /// Assignee (email or user id)
         #[arg(long)]
         assignee: Option<String>,
-        /// Project name
+        /// Project label (the local backend always assigns the active
+        /// FLOW_PROJECT tenant instead)
         #[arg(long)]
-        project: String,
+        project: Option<String>,
         /// Ids of cards this one depends on. Each must already exist on the
         /// board. Accepts a comma-separated list and/or can be repeated:
         /// `--depends-on A,B` and `--depends-on A --depends-on B` both work.
@@ -131,7 +135,8 @@ pub enum Command {
         /// New assignee (email or user id, keeps current if omitted)
         #[arg(long)]
         assignee: Option<String>,
-        /// Project name (keeps current if omitted)
+        /// Project name (keeps current if omitted; the local backend
+        /// always keeps the active FLOW_PROJECT tenant)
         #[arg(long)]
         project: Option<String>,
         /// Ids of cards this one depends on (keeps current list if omitted).
@@ -201,6 +206,7 @@ pub fn run(cmd: Command, fmt: Format) -> io::Result<()> {
             project,
             depends_on,
         } => {
+            let project = project.unwrap_or_default();
             let card_id = prov
                 .create_card(&column_id, &project)
                 .map_err(|e| io::Error::other(e.to_string()))?;
@@ -242,17 +248,16 @@ pub fn run(cmd: Command, fmt: Format) -> io::Result<()> {
                 ));
             }
 
-            let path = prov
-                .card_path(&card_id)
+            let board = prov
+                .load_board()
                 .map_err(|e| io::Error::other(e.to_string()))?;
-
-            let (cur_title, cur_body, cur_priority, cur_assignee, cur_project, cur_depends_on) = store_fs::read_card_content(&path)?;
-            let t = title.as_deref().unwrap_or(&cur_title);
-            let b = body.as_deref().unwrap_or(&cur_body);
-            let p = priority.as_deref().map(Priority::from_str).unwrap_or(cur_priority);
-            let a = assignee.as_deref().unwrap_or(&cur_assignee);
-            let proj = project.as_deref().unwrap_or(&cur_project);
-            let d = depends_on.unwrap_or(cur_depends_on);
+            let (_, cur) = find_card(&board, &card_id)?;
+            let t = title.as_deref().unwrap_or(&cur.title);
+            let b = body.as_deref().unwrap_or(&cur.description);
+            let p = priority.as_deref().map(Priority::from_str).unwrap_or(cur.priority);
+            let a = assignee.as_deref().unwrap_or(&cur.assignee);
+            let proj = project.as_deref().unwrap_or(&cur.project);
+            let d = depends_on.unwrap_or_else(|| cur.depends_on.clone());
             prov.update_card(&card_id, t, b, p, a, proj, &d)
                 .map_err(|e| io::Error::other(e.to_string()))?;
 
