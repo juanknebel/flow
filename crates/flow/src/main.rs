@@ -27,11 +27,16 @@ use flow_tui::{
 };
 
 mod daemon;
+mod mcp;
 
 fn main() -> io::Result<()> {
     let args: Vec<String> = std::env::args().collect();
     if args.iter().any(|a| a == "daemon" || a == "serve") {
         daemon::run();
+        return Ok(());
+    }
+    if args.iter().any(|a| a == "mcp") {
+        mcp::run();
         return Ok(());
     }
     enable_raw_mode()?;

@@ -195,6 +195,17 @@ pub fn run(cmd: Command, fmt: Format, project: Option<&str>) -> io::Result<()> {
         .filter(|s| !s.is_empty())
         .ok_or_else(|| io::Error::other("--project <CODE> is required"))?;
     let tenant = tenant.to_string();
+    #[cfg(unix)]
+    let mut prov: Box<dyn flow_core::provider::Provider> =
+        if flow_core::provider_daemon::DaemonProvider::is_available() {
+            Box::new(flow_core::provider_daemon::DaemonProvider::new(
+                flow_core::provider_daemon::DaemonProvider::socket_path(),
+                tenant.clone(),
+            ))
+        } else {
+            provider::from_env_with_project(Some(tenant.clone()))
+        };
+    #[cfg(not(unix))]
     let mut prov = provider::from_env_with_project(Some(tenant.clone()));
 
     match cmd {
