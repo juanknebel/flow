@@ -43,12 +43,21 @@ pub fn format_board(board: &Board, fmt: Format) -> Result<String, serde_json::Er
                 out.push_str(&format!("== {} ({}) ==\n", col.title, col.cards.len()));
                 let mut last_project: Option<&str> = None;
                 for card in &col.cards {
-                    let proj = if card.project.is_empty() { "(sin proyecto)" } else { &card.project };
+                    let proj = if card.project.is_empty() {
+                        "(sin proyecto)"
+                    } else {
+                        &card.project
+                    };
                     if last_project != Some(proj) {
                         out.push_str(&format!("  [{}]\n", proj));
                         last_project = Some(proj);
                     }
-                    out.push_str(&format!("  {}  {}  {}\n", card.id, card.priority.label(), card.title));
+                    out.push_str(&format!(
+                        "  {}  {}  {}\n",
+                        card.id,
+                        card.priority.label(),
+                        card.title
+                    ));
                 }
                 out.push('\n');
             }
@@ -78,7 +87,8 @@ pub fn format_board(board: &Board, fmt: Format) -> Result<String, serde_json::Er
             out
         }
         Format::Csv => {
-            let mut out = String::from("column_id,column_title,card_id,card_title,priority,project\n");
+            let mut out =
+                String::from("column_id,column_title,card_id,card_title,priority,project\n");
             for col in &board.columns {
                 for card in &col.cards {
                     out.push_str(&format!(
@@ -99,7 +109,13 @@ pub fn format_board(board: &Board, fmt: Format) -> Result<String, serde_json::Er
             let mut rows = Vec::new();
             for col in &board.columns {
                 if col.cards.is_empty() {
-                    rows.push(vec![col.title.clone(), String::new(), String::new(), String::new(), String::new()]);
+                    rows.push(vec![
+                        col.title.clone(),
+                        String::new(),
+                        String::new(),
+                        String::new(),
+                        String::new(),
+                    ]);
                 } else {
                     for card in &col.cards {
                         rows.push(vec![
@@ -125,7 +141,12 @@ pub fn format_board(board: &Board, fmt: Format) -> Result<String, serde_json::Er
                     "done" => "✅",
                     _ => "📦",
                 };
-                col_str.push_str(&format!("### {} {} ({})\n", emoji, col.title, col.cards.len()));
+                col_str.push_str(&format!(
+                    "### {} {} ({})\n",
+                    emoji,
+                    col.title,
+                    col.cards.len()
+                ));
                 if col.cards.is_empty() {
                     col_str.push_str("* *(No hay tareas en esta columna)*\n");
                 } else {
@@ -206,10 +227,22 @@ fn join_deps_csv(depends_on: &[String]) -> String {
     depends_on.join("; ")
 }
 
-pub fn format_card(card: &Card, col_id: &str, col_title: &str, fmt: Format) -> Result<String, serde_json::Error> {
+pub fn format_card(
+    card: &Card,
+    col_id: &str,
+    col_title: &str,
+    fmt: Format,
+) -> Result<String, serde_json::Error> {
     Ok(match fmt {
         Format::Plain => {
-            let mut out = format!("{}\n{}\npriority: {}\ncolumn: {} ({})\n", card.id, card.title, card.priority.label(), col_title, col_id);
+            let mut out = format!(
+                "{}\n{}\npriority: {}\ncolumn: {} ({})\n",
+                card.id,
+                card.title,
+                card.priority.label(),
+                col_title,
+                col_id
+            );
             if !card.project.is_empty() {
                 out.push_str(&format!("project: {}\n", card.project));
             }
@@ -235,8 +268,7 @@ pub fn format_card(card: &Card, col_id: &str, col_title: &str, fmt: Format) -> R
             depends_on: card.depends_on.clone(),
             column_id: col_id.to_string(),
             column_title: col_title.to_string(),
-        })
-        ?,
+        })?,
         Format::Xml => {
             let mut out = format!(
                 "<card id=\"{}\" title=\"{}\" priority=\"{}\" project=\"{}\" depends_on=\"{}\" column_id=\"{}\" column_title=\"{}\">",
@@ -258,7 +290,9 @@ pub fn format_card(card: &Card, col_id: &str, col_title: &str, fmt: Format) -> R
             out
         }
         Format::Csv => {
-            let mut out = String::from("id,title,description,priority,assignee,project,depends_on,column_id,column_title\n");
+            let mut out = String::from(
+                "id,title,description,priority,assignee,project,depends_on,column_id,column_title\n",
+            );
             out.push_str(&format!(
                 "{},{},{},{},{},{},{},{},{}",
                 csv_esc(&card.id),
@@ -292,7 +326,14 @@ pub fn format_card(card: &Card, col_id: &str, col_title: &str, fmt: Format) -> R
             format_table(&headers, &rows)
         }
         Format::Markdown => {
-            let mut out = format!("# {}\n**{}** | Priority: {}\n\nColumn: {} (`{}`)\n", card.title, card.id, card.priority.label(), col_title, col_id);
+            let mut out = format!(
+                "# {}\n**{}** | Priority: {}\n\nColumn: {} (`{}`)\n",
+                card.title,
+                card.id,
+                card.priority.label(),
+                col_title,
+                col_id
+            );
             if !card.project.is_empty() {
                 out.push_str(&format!("Project: {}\n", card.project));
             }
@@ -329,7 +370,12 @@ pub fn format_columns(board: &Board, fmt: Format) -> Result<String, serde_json::
         Format::Plain => {
             let mut out = String::new();
             for col in &board.columns {
-                out.push_str(&format!("{}  {}  ({})\n", col.id, col.title, col.cards.len()));
+                out.push_str(&format!(
+                    "{}  {}  ({})\n",
+                    col.id,
+                    col.title,
+                    col.cards.len()
+                ));
             }
             chomp(out)
         }
@@ -379,7 +425,9 @@ pub fn format_columns(board: &Board, fmt: Format) -> Result<String, serde_json::
             for col in &board.columns {
                 out.push_str(&format!(
                     "| {} | {} | {} |\n",
-                    col.id, col.title, col.cards.len()
+                    col.id,
+                    col.title,
+                    col.cards.len()
                 ));
             }
             chomp(out)
@@ -573,7 +621,10 @@ mod tests {
     fn board_csv_has_header_and_rows() -> TestResult {
         let out = format_board(&sample_board(), Format::Csv)?;
         let lines: Vec<&str> = out.lines().collect();
-        assert_eq!(lines[0], "column_id,column_title,card_id,card_title,priority,project");
+        assert_eq!(
+            lines[0],
+            "column_id,column_title,card_id,card_title,priority,project"
+        );
         assert_eq!(lines[1], "todo,To Do,FLOW-1,First task,MEDIUM,");
         assert_eq!(lines.len(), 2);
         Ok(())
@@ -684,7 +735,10 @@ mod tests {
     fn card_csv_has_header_and_row() -> TestResult {
         let out = format_card(&sample_card(), "todo", "To Do", Format::Csv)?;
         let lines: Vec<&str> = out.lines().collect();
-        assert_eq!(lines[0], "id,title,description,priority,assignee,project,depends_on,column_id,column_title");
+        assert_eq!(
+            lines[0],
+            "id,title,description,priority,assignee,project,depends_on,column_id,column_title"
+        );
         assert!(lines[1].contains("X-1"));
         assert!(lines[1].contains("HIGH"));
         Ok(())

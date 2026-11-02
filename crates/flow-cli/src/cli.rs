@@ -192,7 +192,10 @@ pub fn run(cmd: Command, fmt: Format, project: Option<&str>) -> io::Result<()> {
             if !tenant.eq_ignore_ascii_case("all") {
                 board.apply_project_filter(std::slice::from_ref(&tenant));
             }
-            println!("{}", format::format_board(&board, fmt).map_err(io::Error::other)?);
+            println!(
+                "{}",
+                format::format_board(&board, fmt).map_err(io::Error::other)?
+            );
         }
         Command::Show { card_id } => {
             let board = prov
@@ -204,10 +207,7 @@ pub fn run(cmd: Command, fmt: Format, project: Option<&str>) -> io::Result<()> {
                 format::format_card(card, &col.id, &col.title, fmt).map_err(io::Error::other)?
             );
         }
-        Command::Move {
-            card_id,
-            column_id,
-        } => {
+        Command::Move { card_id, column_id } => {
             prov.move_card(&card_id, &column_id)
                 .map_err(|e| io::Error::other(e.to_string()))?;
             println!(
@@ -219,7 +219,8 @@ pub fn run(cmd: Command, fmt: Format, project: Option<&str>) -> io::Result<()> {
                         ("column_id", &column_id),
                     ],
                     fmt,
-                ).map_err(io::Error::other)?
+                )
+                .map_err(io::Error::other)?
             );
         }
         Command::Create {
@@ -234,10 +235,18 @@ pub fn run(cmd: Command, fmt: Format, project: Option<&str>) -> io::Result<()> {
                 .create_card(&column_id, &tenant)
                 .map_err(|e| io::Error::other(e.to_string()))?;
 
-            if title.is_some() || body.is_some() || priority.is_some() || assignee.is_some() || depends_on.is_some() {
+            if title.is_some()
+                || body.is_some()
+                || priority.is_some()
+                || assignee.is_some()
+                || depends_on.is_some()
+            {
                 let t = title.as_deref().unwrap_or("New card");
                 let b = body.as_deref().unwrap_or("");
-                let p = priority.as_deref().map(Priority::from_str).unwrap_or(Priority::Medium);
+                let p = priority
+                    .as_deref()
+                    .map(Priority::from_str)
+                    .unwrap_or(Priority::Medium);
                 let a = assignee.as_deref().unwrap_or("");
                 let d = depends_on.unwrap_or_default();
                 prov.update_card(&card_id, t, b, p, a, &tenant, &d)
@@ -253,7 +262,8 @@ pub fn run(cmd: Command, fmt: Format, project: Option<&str>) -> io::Result<()> {
                         ("column_id", &column_id),
                     ],
                     fmt,
-                ).map_err(io::Error::other)?
+                )
+                .map_err(io::Error::other)?
             );
         }
         Command::Edit {
@@ -264,7 +274,12 @@ pub fn run(cmd: Command, fmt: Format, project: Option<&str>) -> io::Result<()> {
             assignee,
             depends_on,
         } => {
-            if title.is_none() && body.is_none() && priority.is_none() && assignee.is_none() && depends_on.is_none() {
+            if title.is_none()
+                && body.is_none()
+                && priority.is_none()
+                && assignee.is_none()
+                && depends_on.is_none()
+            {
                 return Err(io::Error::other(
                     "edit requires at least --title, --body, --priority, --assignee, or --depends-on",
                 ));
@@ -276,7 +291,10 @@ pub fn run(cmd: Command, fmt: Format, project: Option<&str>) -> io::Result<()> {
             let (_, cur) = find_card(&board, &card_id)?;
             let t = title.as_deref().unwrap_or(&cur.title);
             let b = body.as_deref().unwrap_or(&cur.description);
-            let p = priority.as_deref().map(Priority::from_str).unwrap_or(cur.priority);
+            let p = priority
+                .as_deref()
+                .map(Priority::from_str)
+                .unwrap_or(cur.priority);
             let a = assignee.as_deref().unwrap_or(&cur.assignee);
             let d = depends_on.unwrap_or_else(|| cur.depends_on.clone());
             prov.update_card(&card_id, t, b, p, a, &cur.project, &d)
@@ -284,10 +302,8 @@ pub fn run(cmd: Command, fmt: Format, project: Option<&str>) -> io::Result<()> {
 
             println!(
                 "{}",
-                format::format_result(
-                    &[("action", "edit"), ("card_id", &card_id)],
-                    fmt,
-                ).map_err(io::Error::other)?
+                format::format_result(&[("action", "edit"), ("card_id", &card_id)], fmt,)
+                    .map_err(io::Error::other)?
             );
         }
         Command::Delete { card_id } => {
@@ -295,10 +311,8 @@ pub fn run(cmd: Command, fmt: Format, project: Option<&str>) -> io::Result<()> {
                 .map_err(|e| io::Error::other(e.to_string()))?;
             println!(
                 "{}",
-                format::format_result(
-                    &[("action", "delete"), ("card_id", &card_id)],
-                    fmt,
-                ).map_err(io::Error::other)?
+                format::format_result(&[("action", "delete"), ("card_id", &card_id)], fmt,)
+                    .map_err(io::Error::other)?
             );
         }
         Command::DeleteProject { confirm } => {
@@ -320,16 +334,24 @@ pub fn run(cmd: Command, fmt: Format, project: Option<&str>) -> io::Result<()> {
             println!(
                 "{}",
                 format::format_result(
-                    &[("action", "delete-project"), ("project", &tenant), ("cards_deleted", &deleted_str)],
+                    &[
+                        ("action", "delete-project"),
+                        ("project", &tenant),
+                        ("cards_deleted", &deleted_str)
+                    ],
                     fmt,
-                ).map_err(io::Error::other)?
+                )
+                .map_err(io::Error::other)?
             );
         }
         Command::Columns => {
             let board = prov
                 .load_board()
                 .map_err(|e| io::Error::other(e.to_string()))?;
-            println!("{}", format::format_columns(&board, fmt).map_err(io::Error::other)?);
+            println!(
+                "{}",
+                format::format_columns(&board, fmt).map_err(io::Error::other)?
+            );
         }
         Command::Export { out } => {
             let mut board = prov
@@ -338,8 +360,10 @@ pub fn run(cmd: Command, fmt: Format, project: Option<&str>) -> io::Result<()> {
             if !tenant.eq_ignore_ascii_case("all") {
                 board.apply_project_filter(std::slice::from_ref(&tenant));
             }
-            let json = flow_core::exportimport::to_json(&flow_core::exportimport::export_board(&board, &tenant))
-                .map_err(io::Error::other)?;
+            let json = flow_core::exportimport::to_json(&flow_core::exportimport::export_board(
+                &board, &tenant,
+            ))
+            .map_err(io::Error::other)?;
             match out {
                 Some(path) => std::fs::write(&path, json)?,
                 None => println!("{json}"),
@@ -380,9 +404,14 @@ pub fn run(cmd: Command, fmt: Format, project: Option<&str>) -> io::Result<()> {
             println!(
                 "{}",
                 format::format_result(
-                    &[("action", "import"), ("project", &tenant), ("cards_created", &count_str)],
+                    &[
+                        ("action", "import"),
+                        ("project", &tenant),
+                        ("cards_created", &count_str)
+                    ],
                     fmt,
-                ).map_err(io::Error::other)?
+                )
+                .map_err(io::Error::other)?
             );
         }
     }

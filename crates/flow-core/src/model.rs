@@ -1,6 +1,7 @@
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum SortOrder {
     /// Higher priority first (Bug → High → Medium → Low → Wishlist)
+    #[default]
     Asc,
     /// Lower priority first (Wishlist → Low → Medium → High → Bug)
     Desc,
@@ -19,12 +20,6 @@ impl SortOrder {
             SortOrder::Asc => "↑",
             SortOrder::Desc => "↓",
         }
-    }
-}
-
-impl Default for SortOrder {
-    fn default() -> Self {
-        SortOrder::Asc
     }
 }
 
@@ -58,6 +53,7 @@ impl Priority {
         }
     }
 
+    #[allow(clippy::should_implement_trait)]
     pub fn from_str(s: &str) -> Self {
         match s.trim().to_lowercase().as_str() {
             "low" | "l" => Priority::Low,
@@ -141,11 +137,9 @@ impl Board {
                     (false, false) => a.project.to_lowercase().cmp(&b.project.to_lowercase()),
                 };
                 proj_cmp
-                    .then_with(|| {
-                        match order {
-                            SortOrder::Asc => a.priority.sort_key().cmp(&b.priority.sort_key()),
-                            SortOrder::Desc => b.priority.sort_key().cmp(&a.priority.sort_key()),
-                        }
+                    .then_with(|| match order {
+                        SortOrder::Asc => a.priority.sort_key().cmp(&b.priority.sort_key()),
+                        SortOrder::Desc => b.priority.sort_key().cmp(&a.priority.sort_key()),
                     })
                     .then_with(|| a.title.to_lowercase().cmp(&b.title.to_lowercase()))
             });
@@ -299,31 +293,31 @@ mod tests {
         let b = board(vec![card("A", &["B"]), card("B", &[])]);
         // Proposing B -> A would create A -> B -> A.
         let cycle = b.find_dependency_cycle("B", &["A".to_string()]);
-        assert_eq!(cycle, Some(vec!["B".to_string(), "A".to_string(), "B".to_string()]));
+        assert_eq!(
+            cycle,
+            Some(vec!["B".to_string(), "A".to_string(), "B".to_string()])
+        );
     }
 
     #[test]
     fn find_dependency_cycle_detects_transitive_cycle() {
-        let b = board(vec![
-            card("A", &["B"]),
-            card("B", &["C"]),
-            card("C", &[]),
-        ]);
+        let b = board(vec![card("A", &["B"]), card("B", &["C"]), card("C", &[])]);
         // Proposing C -> A would create A -> B -> C -> A.
         let cycle = b.find_dependency_cycle("C", &["A".to_string()]);
         assert_eq!(
             cycle,
-            Some(vec!["C".to_string(), "A".to_string(), "B".to_string(), "C".to_string()])
+            Some(vec![
+                "C".to_string(),
+                "A".to_string(),
+                "B".to_string(),
+                "C".to_string()
+            ])
         );
     }
 
     #[test]
     fn find_dependency_cycle_none_when_acyclic() {
-        let b = board(vec![
-            card("A", &["B"]),
-            card("B", &["C"]),
-            card("C", &[]),
-        ]);
+        let b = board(vec![card("A", &["B"]), card("B", &["C"]), card("C", &[])]);
         assert_eq!(b.find_dependency_cycle("A", &["B".to_string()]), None);
     }
 }

@@ -98,7 +98,7 @@ impl EditState {
         if self.cursor_pos > 0 {
             let pos = self.cursor_pos;
             let text = self.current_text_mut();
-            if let Some((idx, _)) = text.char_indices().filter(|(i, _)| *i < pos).last() {
+            if let Some((idx, _)) = text.char_indices().rfind(|(i, _)| *i < pos) {
                 text.remove(idx);
                 self.cursor_pos = idx;
             }
@@ -124,7 +124,7 @@ impl EditState {
         if self.cursor_pos > 0 {
             let text = self.current_text();
             let pos = self.cursor_pos;
-            if let Some((idx, _)) = text.char_indices().filter(|(i, _)| *i < pos).last() {
+            if let Some((idx, _)) = text.char_indices().rfind(|(i, _)| *i < pos) {
                 self.cursor_pos = idx;
             }
         }
@@ -137,7 +137,7 @@ impl EditState {
         }
         let text = self.current_text();
         let pos = self.cursor_pos;
-        if let Some((idx, _)) = text.char_indices().filter(|(i, _)| *i > pos).next() {
+        if let Some((idx, _)) = text.char_indices().find(|(i, _)| *i > pos) {
             self.cursor_pos = idx;
         } else if pos < text.len() {
             self.cursor_pos = text.len();
@@ -169,6 +169,12 @@ pub struct SearchState {
     pub cursor_pos: usize,
 }
 
+impl Default for SearchState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SearchState {
     pub fn new() -> Self {
         Self {
@@ -190,7 +196,7 @@ impl SearchState {
     pub fn delete_prev(&mut self) {
         if self.cursor_pos > 0 {
             let pos = self.cursor_pos;
-            if let Some((idx, _)) = self.query.char_indices().filter(|(i, _)| *i < pos).last() {
+            if let Some((idx, _)) = self.query.char_indices().rfind(|(i, _)| *i < pos) {
                 self.query.remove(idx);
                 self.cursor_pos = idx;
             }
@@ -305,7 +311,10 @@ impl ProjectSelectState {
     }
 
     pub fn confirm_insert_char(&mut self, c: char) {
-        let Some(DeleteConfirm::Typed { input, cursor_pos, .. }) = self.delete_confirm.as_mut() else {
+        let Some(DeleteConfirm::Typed {
+            input, cursor_pos, ..
+        }) = self.delete_confirm.as_mut()
+        else {
             return;
         };
         if *cursor_pos >= input.len() {
@@ -317,12 +326,15 @@ impl ProjectSelectState {
     }
 
     pub fn confirm_delete_prev(&mut self) {
-        let Some(DeleteConfirm::Typed { input, cursor_pos, .. }) = self.delete_confirm.as_mut() else {
+        let Some(DeleteConfirm::Typed {
+            input, cursor_pos, ..
+        }) = self.delete_confirm.as_mut()
+        else {
             return;
         };
         if *cursor_pos > 0 {
             let pos = *cursor_pos;
-            if let Some((idx, _)) = input.char_indices().filter(|(i, _)| *i < pos).last() {
+            if let Some((idx, _)) = input.char_indices().rfind(|(i, _)| *i < pos) {
                 input.remove(idx);
                 *cursor_pos = idx;
             }
@@ -330,23 +342,29 @@ impl ProjectSelectState {
     }
 
     pub fn confirm_move_cursor_left(&mut self) {
-        let Some(DeleteConfirm::Typed { input, cursor_pos, .. }) = self.delete_confirm.as_mut() else {
+        let Some(DeleteConfirm::Typed {
+            input, cursor_pos, ..
+        }) = self.delete_confirm.as_mut()
+        else {
             return;
         };
         if *cursor_pos > 0 {
             let pos = *cursor_pos;
-            if let Some((idx, _)) = input.char_indices().filter(|(i, _)| *i < pos).last() {
+            if let Some((idx, _)) = input.char_indices().rfind(|(i, _)| *i < pos) {
                 *cursor_pos = idx;
             }
         }
     }
 
     pub fn confirm_move_cursor_right(&mut self) {
-        let Some(DeleteConfirm::Typed { input, cursor_pos, .. }) = self.delete_confirm.as_mut() else {
+        let Some(DeleteConfirm::Typed {
+            input, cursor_pos, ..
+        }) = self.delete_confirm.as_mut()
+        else {
             return;
         };
         let pos = *cursor_pos;
-        if let Some((idx, _)) = input.char_indices().filter(|(i, _)| *i > pos).next() {
+        if let Some((idx, _)) = input.char_indices().find(|(i, _)| *i > pos) {
             *cursor_pos = idx;
         } else if pos < input.len() {
             *cursor_pos = input.len();
@@ -376,7 +394,7 @@ impl ProjectSelectState {
     pub fn delete_prev(&mut self) {
         if self.cursor_pos > 0 {
             let pos = self.cursor_pos;
-            if let Some((idx, _)) = self.input.char_indices().filter(|(i, _)| *i < pos).last() {
+            if let Some((idx, _)) = self.input.char_indices().rfind(|(i, _)| *i < pos) {
                 self.input.remove(idx);
                 self.cursor_pos = idx;
             }
@@ -386,7 +404,7 @@ impl ProjectSelectState {
     pub fn move_cursor_left(&mut self) {
         if self.cursor_pos > 0 {
             let pos = self.cursor_pos;
-            if let Some((idx, _)) = self.input.char_indices().filter(|(i, _)| *i < pos).last() {
+            if let Some((idx, _)) = self.input.char_indices().rfind(|(i, _)| *i < pos) {
                 self.cursor_pos = idx;
             }
         }
@@ -394,7 +412,7 @@ impl ProjectSelectState {
 
     pub fn move_cursor_right(&mut self) {
         let pos = self.cursor_pos;
-        if let Some((idx, _)) = self.input.char_indices().filter(|(i, _)| *i > pos).next() {
+        if let Some((idx, _)) = self.input.char_indices().find(|(i, _)| *i > pos) {
             self.cursor_pos = idx;
         } else if pos < self.input.len() {
             self.cursor_pos = self.input.len();
@@ -553,7 +571,8 @@ impl App {
             Action::SelectDown => self.select(1),
             Action::ToggleDetail => self.detail_open = !self.detail_open,
             Action::Delete => {
-                if !self.board.columns.is_empty() && !self.board.columns[self.col].cards.is_empty() {
+                if !self.board.columns.is_empty() && !self.board.columns[self.col].cards.is_empty()
+                {
                     self.confirm_delete = true;
                 }
             }
@@ -561,7 +580,15 @@ impl App {
                 self.sort_order = self.sort_order.toggle();
                 self.board.sort_cards_with(self.sort_order);
             }
-            Action::Refresh | Action::MoveLeft | Action::MoveRight | Action::Add | Action::Edit | Action::Search | Action::ProjectFilter | Action::SwitchProject | Action::Undo => {}
+            Action::Refresh
+            | Action::MoveLeft
+            | Action::MoveRight
+            | Action::Add
+            | Action::Edit
+            | Action::Search
+            | Action::ProjectFilter
+            | Action::SwitchProject
+            | Action::Undo => {}
         }
         false
     }
@@ -728,7 +755,8 @@ mod tests {
     }
 
     #[test]
-    fn move_right_moves_card_and_updates_focus_to_new_card() -> Result<(), Box<dyn std::error::Error>> {
+    fn move_right_moves_card_and_updates_focus_to_new_card()
+    -> Result<(), Box<dyn std::error::Error>> {
         let mut app = App::new(board_two_cols());
 
         let (id, dst) = app.optimistic_move(1).ok_or("expected a move")?;
@@ -789,6 +817,39 @@ mod tests {
     }
 
     #[test]
+    fn delete_action_sets_confirm_delete() {
+        let mut app = App::new(board_two_cols());
+        assert!(!app.confirm_delete);
+        assert!(!app.apply(Action::Delete));
+        assert!(app.confirm_delete);
+    }
+
+    #[test]
+    fn delete_action_noop_on_empty_board() {
+        let mut app = App::new(Board { columns: vec![] });
+        assert!(!app.apply(Action::Delete));
+        assert!(!app.confirm_delete);
+    }
+
+    #[test]
+    fn toggle_sort_flips_order_and_resorts() {
+        let mut app = App::new(board_two_cols());
+        assert_eq!(app.sort_order, SortOrder::Asc);
+        assert!(!app.apply(Action::ToggleSort));
+        assert_eq!(app.sort_order, SortOrder::Desc);
+        assert!(!app.apply(Action::ToggleSort));
+        assert_eq!(app.sort_order, SortOrder::Asc);
+    }
+
+    #[test]
+    fn close_or_quit_cancels_confirm_delete() {
+        let mut app = App::new(board_two_cols());
+        app.confirm_delete = true;
+        assert!(!app.apply(Action::CloseOrQuit));
+        assert!(!app.confirm_delete);
+    }
+
+    #[test]
     fn edit_focus_cycles() {
         assert_eq!(EditFocus::Title.next(), EditFocus::DependsOn);
         assert_eq!(EditFocus::DependsOn.next(), EditFocus::Priority);
@@ -823,9 +884,7 @@ mod tests {
                 Column {
                     id: "done".into(),
                     title: "Done".into(),
-                    cards: vec![
-                        card_with_desc("3", "Setup CI", "pipeline bug fix"),
-                    ],
+                    cards: vec![card_with_desc("3", "Setup CI", "pipeline bug fix")],
                 },
             ],
         }
@@ -855,7 +914,10 @@ mod tests {
     #[test]
     fn search_matches_returns_matching_positions() {
         let mut app = App::new(search_board());
-        app.search_state = Some(SearchState { query: "bug".into(), cursor_pos: 3 });
+        app.search_state = Some(SearchState {
+            query: "bug".into(),
+            cursor_pos: 3,
+        });
 
         let matches = app.search_matches();
         assert_eq!(matches, vec![(0, 0), (1, 0)]); // "Fix login bug" and "pipeline bug fix"
@@ -864,7 +926,10 @@ mod tests {
     #[test]
     fn select_next_match_wraps_around() {
         let mut app = App::new(search_board());
-        app.search_state = Some(SearchState { query: "bug".into(), cursor_pos: 3 });
+        app.search_state = Some(SearchState {
+            query: "bug".into(),
+            cursor_pos: 3,
+        });
         // matches: (0,0) "Fix login bug", (1,0) "pipeline bug fix"
 
         app.select_next_match(); // from (0,0) → next match is (1,0)
@@ -877,7 +942,10 @@ mod tests {
     #[test]
     fn select_prev_match_wraps_around() {
         let mut app = App::new(search_board());
-        app.search_state = Some(SearchState { query: "bug".into(), cursor_pos: 3 });
+        app.search_state = Some(SearchState {
+            query: "bug".into(),
+            cursor_pos: 3,
+        });
 
         app.select_prev_match(); // wraps to last
         assert_eq!((app.col, app.row), (1, 0));

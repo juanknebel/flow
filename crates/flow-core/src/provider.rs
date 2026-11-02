@@ -117,7 +117,17 @@ pub trait Provider {
         })
     }
 
-    fn update_card(&mut self, _card_id: &str, _title: &str, _description: &str, _priority: Priority, _assignee: &str, _project: &str, _depends_on: &[String]) -> Result<(), ProviderError> {
+    #[allow(clippy::too_many_arguments)]
+    fn update_card(
+        &mut self,
+        _card_id: &str,
+        _title: &str,
+        _description: &str,
+        _priority: Priority,
+        _assignee: &str,
+        _project: &str,
+        _depends_on: &[String],
+    ) -> Result<(), ProviderError> {
         Err(ProviderError::Parse {
             msg: "update_card not supported by current provider".to_string(),
         })

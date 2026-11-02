@@ -1,4 +1,7 @@
 pub mod app;
 pub mod ui;
 
-pub use app::{App, Action, EditState, EditFocus, SearchState, ProjectFilterState, ProjectSelectState, DeleteConfirm};
+pub use app::{
+    Action, App, DeleteConfirm, EditFocus, EditState, ProjectFilterState, ProjectSelectState,
+    SearchState,
+};

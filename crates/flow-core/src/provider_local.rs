@@ -122,7 +122,8 @@ impl Provider for LocalProvider {
     }
 
     fn list_projects(&mut self) -> Result<Vec<String>, ProviderError> {
-        store_db::list_projects(&self.db_path).map_err(|e| map_err("list_projects", &self.db_path, e))
+        store_db::list_projects(&self.db_path)
+            .map_err(|e| map_err("list_projects", &self.db_path, e))
     }
 
     fn select_project(&mut self, project: &str) -> Result<(), ProviderError> {
@@ -200,13 +201,31 @@ impl Provider for LocalProvider {
             .map_err(|e| map_err("delete_card", &self.db_path, e))
     }
 
-    fn update_card(&mut self, card_id: &str, title: &str, description: &str, priority: Priority, assignee: &str, _project: &str, depends_on: &[String]) -> Result<(), ProviderError> {
+    fn update_card(
+        &mut self,
+        card_id: &str,
+        title: &str,
+        description: &str,
+        priority: Priority,
+        assignee: &str,
+        _project: &str,
+        depends_on: &[String],
+    ) -> Result<(), ProviderError> {
         if is_all(&self.project) {
             return Err(read_only());
         }
         let deps = self.validate_depends_on(card_id, depends_on)?;
-        store_db::update_card(&self.db_path, &self.project, card_id, title, description, priority, assignee, &deps)
-            .map_err(|e| map_err("update_card", &self.db_path, e))
+        store_db::update_card(
+            &self.db_path,
+            &self.project,
+            card_id,
+            title,
+            description,
+            priority,
+            assignee,
+            &deps,
+        )
+        .map_err(|e| map_err("update_card", &self.db_path, e))
     }
 }
 
@@ -216,7 +235,11 @@ impl LocalProvider {
     /// - every referenced card must exist,
     /// - a card can't depend on itself,
     /// - the resulting dependency graph must stay acyclic.
-    fn validate_depends_on(&mut self, card_id: &str, depends_on: &[String]) -> Result<Vec<String>, ProviderError> {
+    fn validate_depends_on(
+        &mut self,
+        card_id: &str,
+        depends_on: &[String],
+    ) -> Result<Vec<String>, ProviderError> {
         let mut seen = std::collections::HashSet::new();
         let mut deps = Vec::new();
         for id in depends_on {
@@ -295,19 +318,11 @@ mod tests {
             ProviderError::NotFound { .. }
         ));
         assert!(matches!(
-            map_err(
-                "op",
-                &db,
-                StoreError::Db(rusqlite::Error::InvalidQuery)
-            ),
+            map_err("op", &db, StoreError::Db(rusqlite::Error::InvalidQuery)),
             ProviderError::Db { .. }
         ));
         assert!(matches!(
-            map_err(
-                "op",
-                &db,
-                StoreError::Io(std::io::Error::other("boom"))
-            ),
+            map_err("op", &db, StoreError::Io(std::io::Error::other("boom"))),
             ProviderError::Io { .. }
         ));
     }
@@ -344,7 +359,9 @@ mod tests {
     fn move_card_to_unknown_column_returns_not_found() -> TestResult {
         let db = tmp_db();
         let mut provider = LocalProvider::new(db.clone(), "acme".to_string());
-        let id = provider.create_card("todo", "acme").map_err(|e| e.to_string())?;
+        let id = provider
+            .create_card("todo", "acme")
+            .map_err(|e| e.to_string())?;
 
         let err = provider.move_card(&id, "nope").unwrap_err();
         match err {
@@ -361,7 +378,9 @@ mod tests {
         let db = tmp_db();
         let mut provider = LocalProvider::new(db.clone(), "acme".to_string());
 
-        let id = provider.create_card("todo", "ignored-label").map_err(|e| e.to_string())?;
+        let id = provider
+            .create_card("todo", "ignored-label")
+            .map_err(|e| e.to_string())?;
         assert!(id.starts_with("ACME-"), "unexpected id: {id}");
 
         let board = provider.load_board().map_err(|e| e.to_string())?;
@@ -376,10 +395,20 @@ mod tests {
     fn update_card_rejects_missing_dependency() -> TestResult {
         let db = tmp_db();
         let mut provider = LocalProvider::new(db.clone(), "p".to_string());
-        let id = provider.create_card("todo", "p").map_err(|e| e.to_string())?;
+        let id = provider
+            .create_card("todo", "p")
+            .map_err(|e| e.to_string())?;
 
         let err = provider
-            .update_card(&id, "Title", "", Priority::Medium, "", "p", &["DOES-NOT-EXIST".to_string()])
+            .update_card(
+                &id,
+                "Title",
+                "",
+                Priority::Medium,
+                "",
+                "p",
+                &["DOES-NOT-EXIST".to_string()],
+            )
             .unwrap_err();
 
         match err {
@@ -395,10 +424,20 @@ mod tests {
     fn update_card_rejects_self_dependency() -> TestResult {
         let db = tmp_db();
         let mut provider = LocalProvider::new(db.clone(), "p".to_string());
-        let id = provider.create_card("todo", "p").map_err(|e| e.to_string())?;
+        let id = provider
+            .create_card("todo", "p")
+            .map_err(|e| e.to_string())?;
 
         let err = provider
-            .update_card(&id, "Title", "", Priority::Medium, "", "p", &[id.clone()])
+            .update_card(
+                &id,
+                "Title",
+                "",
+                Priority::Medium,
+                "",
+                "p",
+                std::slice::from_ref(&id),
+            )
             .unwrap_err();
 
         assert!(matches!(err, ProviderError::Validation { .. }));
@@ -411,18 +450,40 @@ mod tests {
     fn update_card_rejects_cycle() -> TestResult {
         let db = tmp_db();
         let mut provider = LocalProvider::new(db.clone(), "p".to_string());
-        let a = provider.create_card("todo", "p").map_err(|e| e.to_string())?;
-        let b = provider.create_card("todo", "p").map_err(|e| e.to_string())?;
+        let a = provider
+            .create_card("todo", "p")
+            .map_err(|e| e.to_string())?;
+        let b = provider
+            .create_card("todo", "p")
+            .map_err(|e| e.to_string())?;
         provider
-            .update_card(&b, "B", "", Priority::Medium, "", "p", &[a.clone()])
+            .update_card(
+                &b,
+                "B",
+                "",
+                Priority::Medium,
+                "",
+                "p",
+                std::slice::from_ref(&a),
+            )
             .map_err(|e| e.to_string())?;
 
         let err = provider
-            .update_card(&a, "A", "", Priority::Medium, "", "p", &[b.clone()])
+            .update_card(
+                &a,
+                "A",
+                "",
+                Priority::Medium,
+                "",
+                "p",
+                std::slice::from_ref(&b),
+            )
             .unwrap_err();
 
         match err {
-            ProviderError::Validation { msg } => assert!(msg.contains("circular dependency"), "{msg}"),
+            ProviderError::Validation { msg } => {
+                assert!(msg.contains("circular dependency"), "{msg}")
+            }
             other => panic!("expected Validation error, got {other:?}"),
         }
 
@@ -434,10 +495,22 @@ mod tests {
     fn delete_card_vetoed_by_dependent() -> TestResult {
         let db = tmp_db();
         let mut provider = LocalProvider::new(db.clone(), "p".to_string());
-        let a = provider.create_card("todo", "p").map_err(|e| e.to_string())?;
-        let b = provider.create_card("todo", "p").map_err(|e| e.to_string())?;
+        let a = provider
+            .create_card("todo", "p")
+            .map_err(|e| e.to_string())?;
+        let b = provider
+            .create_card("todo", "p")
+            .map_err(|e| e.to_string())?;
         provider
-            .update_card(&b, "B", "", Priority::Medium, "", "p", &[a.clone()])
+            .update_card(
+                &b,
+                "B",
+                "",
+                Priority::Medium,
+                "",
+                "p",
+                std::slice::from_ref(&a),
+            )
             .map_err(|e| e.to_string())?;
 
         let err = provider.delete_card(&a).unwrap_err();
@@ -454,7 +527,9 @@ mod tests {
     fn delete_card_removes_it() -> TestResult {
         let db = tmp_db();
         let mut provider = LocalProvider::new(db.clone(), "p".to_string());
-        let id = provider.create_card("todo", "p").map_err(|e| e.to_string())?;
+        let id = provider
+            .create_card("todo", "p")
+            .map_err(|e| e.to_string())?;
 
         provider.delete_card(&id).map_err(|e| e.to_string())?;
 
@@ -471,7 +546,10 @@ mod tests {
         assert_eq!(resolve_project(Some("")), ("default".to_string(), false));
         assert_eq!(resolve_project(Some("  ")), ("default".to_string(), false));
         assert_eq!(resolve_project(Some("acme")), ("acme".to_string(), true));
-        assert_eq!(resolve_project(Some("  acme  ")), ("acme".to_string(), true));
+        assert_eq!(
+            resolve_project(Some("  acme  ")),
+            ("acme".to_string(), true)
+        );
     }
 
     #[test]
@@ -480,7 +558,9 @@ mod tests {
         let mut provider = LocalProvider::new(db.clone(), "acme".to_string());
         assert!(!provider.needs_project_selection());
 
-        provider.select_project("  beta ").map_err(|e| e.to_string())?;
+        provider
+            .select_project("  beta ")
+            .map_err(|e| e.to_string())?;
         assert_eq!(provider.project, "beta");
         assert!(!provider.needs_project_selection());
 
@@ -503,7 +583,12 @@ mod tests {
     fn list_projects_lists_tenants() -> TestResult {
         let db = tmp_db();
         let mut provider = LocalProvider::new(db.clone(), "zeta".to_string());
-        assert!(provider.list_projects().map_err(|e| e.to_string())?.is_empty());
+        assert!(
+            provider
+                .list_projects()
+                .map_err(|e| e.to_string())?
+                .is_empty()
+        );
 
         provider.load_board().map_err(|e| e.to_string())?;
         provider.select_project("acme").map_err(|e| e.to_string())?;
@@ -543,7 +628,12 @@ mod tests {
         // Selecting "all" (any case) enters the union, never a real tenant.
         a.select_project("ALL").map_err(|e| e.to_string())?;
         assert!(a.is_read_only());
-        assert!(!a.list_projects().map_err(|e| e.to_string())?.iter().any(|c| c.eq_ignore_ascii_case("all")));
+        assert!(
+            !a.list_projects()
+                .map_err(|e| e.to_string())?
+                .iter()
+                .any(|c| c.eq_ignore_ascii_case("all"))
+        );
 
         cleanup(&db);
         Ok(())

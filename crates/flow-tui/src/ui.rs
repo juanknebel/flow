@@ -1,3 +1,4 @@
+use crossterm::event::KeyCode;
 use ratatui::{
     Frame,
     layout::{Constraint, Direction, Layout, Rect},
@@ -5,7 +6,6 @@ use ratatui::{
     text::{Line, Span},
     widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragraph, Wrap},
 };
-use crossterm::event::KeyCode;
 
 use crate::app::{Action, App, DeleteConfirm, EditFocus, SearchState};
 use flow_core::model::Priority;
@@ -94,8 +94,7 @@ pub fn render(f: &mut Frame, app: &App, render_area: Option<Rect>) {
 
     if app.board.columns.is_empty() {
         f.render_widget(
-            Paragraph::new("No columns found.")
-                .block(Block::default().borders(Borders::ALL)),
+            Paragraph::new("No columns found.").block(Block::default().borders(Borders::ALL)),
             main,
         );
     } else {
@@ -120,7 +119,12 @@ pub fn render(f: &mut Frame, app: &App, render_area: Option<Rect>) {
             format!("  ({} matches)", matches.len())
         };
         let search_line = Line::from(vec![
-            Span::styled("/", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                "/",
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD),
+            ),
             Span::raw(&search.query),
             Span::styled(&match_info, Style::default().fg(Color::DarkGray)),
         ]);
@@ -128,10 +132,7 @@ pub fn render(f: &mut Frame, app: &App, render_area: Option<Rect>) {
             Paragraph::new(search_line).block(Block::default().borders(Borders::TOP)),
             help,
         );
-        f.set_cursor_position((
-            help.x + 1 + search.cursor_pos as u16,
-            help.y + 1,
-        ));
+        f.set_cursor_position((help.x + 1 + search.cursor_pos as u16, help.y + 1));
     } else {
         f.render_widget(
             Paragraph::new(help_text(app)).block(Block::default().borders(Borders::TOP)),
@@ -157,24 +158,40 @@ pub fn render(f: &mut Frame, app: &App, render_area: Option<Rect>) {
         )));
         lines.push(Line::from(vec![
             Span::raw("Priority: "),
-            Span::styled(card.priority.label(), Style::default().fg(priority_color(card.priority))),
+            Span::styled(
+                card.priority.label(),
+                Style::default().fg(priority_color(card.priority)),
+            ),
         ]));
         if !card.project.is_empty() {
             lines.push(Line::from(vec![
                 Span::raw("Project: "),
-                Span::styled(&card.project, Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    &card.project,
+                    Style::default()
+                        .fg(Color::Magenta)
+                        .add_modifier(Modifier::BOLD),
+                ),
             ]));
         }
         if !card.assignee.is_empty() {
             lines.push(Line::from(vec![
                 Span::raw("Assignee: "),
-                Span::styled(&card.assignee, Style::default().add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    &card.assignee,
+                    Style::default().add_modifier(Modifier::BOLD),
+                ),
             ]));
         }
         if !card.depends_on.is_empty() {
             lines.push(Line::from(vec![
                 Span::raw("Depends on: "),
-                Span::styled(card.depends_on.join(", "), Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    card.depends_on.join(", "),
+                    Style::default()
+                        .fg(Color::Cyan)
+                        .add_modifier(Modifier::BOLD),
+                ),
             ]));
         }
         lines.push(Line::from(""));
@@ -217,9 +234,17 @@ pub fn render(f: &mut Frame, app: &App, render_area: Option<Rect>) {
             ]),
             Line::from(""),
             Line::from(vec![
-                Span::styled("y", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    "y",
+                    Style::default()
+                        .fg(Color::Green)
+                        .add_modifier(Modifier::BOLD),
+                ),
                 Span::raw("es / "),
-                Span::styled("n", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    "n",
+                    Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+                ),
                 Span::raw("o"),
             ]),
         ];
@@ -252,18 +277,23 @@ pub fn render(f: &mut Frame, app: &App, render_area: Option<Rect>) {
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
-                Constraint::Length(1),  // 0: card id
-                Constraint::Length(3),  // 1: title
-                Constraint::Length(3),  // 2: depends on
-                Constraint::Length(3),  // 3: priority
-                Constraint::Length(3),  // 4: assignee
+                Constraint::Length(1), // 0: card id
+                Constraint::Length(3), // 1: title
+                Constraint::Length(3), // 2: depends on
+                Constraint::Length(3), // 3: priority
+                Constraint::Length(3), // 4: assignee
                 Constraint::Min(1),    // 5: description
-                Constraint::Length(1),  // 6: help
+                Constraint::Length(1), // 6: help
             ])
             .split(inner_area);
 
         let header_line = if edit.is_new {
-            Line::from(Span::styled("New card", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)))
+            Line::from(Span::styled(
+                "New card",
+                Style::default()
+                    .fg(Color::Green)
+                    .add_modifier(Modifier::BOLD),
+            ))
         } else {
             Line::from(vec![
                 Span::raw("Editing "),
@@ -281,8 +311,12 @@ pub fn render(f: &mut Frame, app: &App, render_area: Option<Rect>) {
             Style::default()
         };
         f.render_widget(
-            Paragraph::new(edit.title.clone())
-                .block(Block::default().title("Title").borders(Borders::ALL).border_style(title_style)),
+            Paragraph::new(edit.title.clone()).block(
+                Block::default()
+                    .title("Title")
+                    .borders(Borders::ALL)
+                    .border_style(title_style),
+            ),
             chunks[1],
         );
 
@@ -293,8 +327,12 @@ pub fn render(f: &mut Frame, app: &App, render_area: Option<Rect>) {
             Style::default()
         };
         f.render_widget(
-            Paragraph::new(edit.depends_on.clone())
-                .block(Block::default().title("Depends On").borders(Borders::ALL).border_style(depends_on_style)),
+            Paragraph::new(edit.depends_on.clone()).block(
+                Block::default()
+                    .title("Depends On")
+                    .borders(Borders::ALL)
+                    .border_style(depends_on_style),
+            ),
             chunks[2],
         );
 
@@ -308,7 +346,9 @@ pub fn render(f: &mut Frame, app: &App, render_area: Option<Rect>) {
             Span::raw(" "),
             Span::styled(
                 edit.priority.label(),
-                Style::default().fg(priority_color(edit.priority)).add_modifier(Modifier::BOLD),
+                Style::default()
+                    .fg(priority_color(edit.priority))
+                    .add_modifier(Modifier::BOLD),
             ),
             if edit.focus == EditFocus::Priority {
                 Span::styled("  ←/→ to change", Style::default().fg(Color::DarkGray))
@@ -317,8 +357,12 @@ pub fn render(f: &mut Frame, app: &App, render_area: Option<Rect>) {
             },
         ];
         f.render_widget(
-            Paragraph::new(Line::from(prio_spans))
-                .block(Block::default().title("Priority").borders(Borders::ALL).border_style(prio_style)),
+            Paragraph::new(Line::from(prio_spans)).block(
+                Block::default()
+                    .title("Priority")
+                    .borders(Borders::ALL)
+                    .border_style(prio_style),
+            ),
             chunks[3],
         );
 
@@ -329,8 +373,12 @@ pub fn render(f: &mut Frame, app: &App, render_area: Option<Rect>) {
             Style::default()
         };
         f.render_widget(
-            Paragraph::new(edit.assignee.clone())
-                .block(Block::default().title("Assignee").borders(Borders::ALL).border_style(assignee_style)),
+            Paragraph::new(edit.assignee.clone()).block(
+                Block::default()
+                    .title("Assignee")
+                    .borders(Borders::ALL)
+                    .border_style(assignee_style),
+            ),
             chunks[4],
         );
 
@@ -343,44 +391,39 @@ pub fn render(f: &mut Frame, app: &App, render_area: Option<Rect>) {
         let wrapped_desc = wrap_text(&edit.description, inner_width);
 
         f.render_widget(
-            Paragraph::new(wrapped_desc.join("\n"))
-                .block(Block::default().title("Description").borders(Borders::ALL).border_style(desc_style)),
+            Paragraph::new(wrapped_desc.join("\n")).block(
+                Block::default()
+                    .title("Description")
+                    .borders(Borders::ALL)
+                    .border_style(desc_style),
+            ),
             chunks[5],
         );
 
         f.render_widget(
-            Paragraph::new("Tab: switch field  \u{2190}/\u{2192}: priority  Enter: save  Esc: cancel")
-                .style(Style::default().fg(Color::DarkGray))
-                .alignment(ratatui::layout::Alignment::Center),
+            Paragraph::new(
+                "Tab: switch field  \u{2190}/\u{2192}: priority  Enter: save  Esc: cancel",
+            )
+            .style(Style::default().fg(Color::DarkGray))
+            .alignment(ratatui::layout::Alignment::Center),
             chunks[6],
         );
 
         // Position cursor
         match edit.focus {
             EditFocus::Title => {
-                f.set_cursor_position((
-                    chunks[1].x + 1 + edit.cursor_pos as u16,
-                    chunks[1].y + 1,
-                ));
+                f.set_cursor_position((chunks[1].x + 1 + edit.cursor_pos as u16, chunks[1].y + 1));
             }
             EditFocus::DependsOn => {
-                f.set_cursor_position((
-                    chunks[2].x + 1 + edit.cursor_pos as u16,
-                    chunks[2].y + 1,
-                ));
+                f.set_cursor_position((chunks[2].x + 1 + edit.cursor_pos as u16, chunks[2].y + 1));
             }
             EditFocus::Assignee => {
-                f.set_cursor_position((
-                    chunks[4].x + 1 + edit.cursor_pos as u16,
-                    chunks[4].y + 1,
-                ));
+                f.set_cursor_position((chunks[4].x + 1 + edit.cursor_pos as u16, chunks[4].y + 1));
             }
             EditFocus::Description => {
-                let (x, y) = calculate_visual_cursor_pos(&edit.description, edit.cursor_pos, inner_width);
-                f.set_cursor_position((
-                    chunks[5].x + 1 + x as u16,
-                    chunks[5].y + 1 + y as u16,
-                ));
+                let (x, y) =
+                    calculate_visual_cursor_pos(&edit.description, edit.cursor_pos, inner_width);
+                f.set_cursor_position((chunks[5].x + 1 + x as u16, chunks[5].y + 1 + y as u16));
             }
             EditFocus::Priority => {
                 // No text cursor for priority field
@@ -400,7 +443,11 @@ pub fn render(f: &mut Frame, app: &App, render_area: Option<Rect>) {
         let mut items: Vec<ListItem> = Vec::new();
         for (i, proj_name) in pf.projects.iter().enumerate() {
             let check = if pf.selected[i] { "[x]" } else { "[ ]" };
-            let label = if proj_name.is_empty() { "(sin proyecto)" } else { proj_name.as_str() };
+            let label = if proj_name.is_empty() {
+                "(sin proyecto)"
+            } else {
+                proj_name.as_str()
+            };
             items.push(ListItem::new(Line::from(vec![
                 Span::styled(format!("{check} "), Style::default().fg(Color::Cyan)),
                 Span::raw(label),
@@ -434,7 +481,11 @@ pub fn render(f: &mut Frame, app: &App, render_area: Option<Rect>) {
         f.render_widget(Clear, area);
         let chunks = Layout::default()
             .direction(Direction::Vertical)
-            .constraints([Constraint::Min(4), Constraint::Length(3), Constraint::Length(1)])
+            .constraints([
+                Constraint::Min(4),
+                Constraint::Length(3),
+                Constraint::Length(1),
+            ])
             .split(area);
 
         let mut items: Vec<ListItem> = Vec::new();
@@ -448,7 +499,9 @@ pub fn render(f: &mut Frame, app: &App, render_area: Option<Rect>) {
             if proj == "all" {
                 items.push(ListItem::new(Line::from(Span::styled(
                     "* all projects (read-only)",
-                    Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+                    Style::default()
+                        .fg(Color::Cyan)
+                        .add_modifier(Modifier::BOLD),
                 ))));
             } else {
                 items.push(ListItem::new(Line::from(Span::raw(proj.as_str()))));
@@ -459,11 +512,19 @@ pub fn render(f: &mut Frame, app: &App, render_area: Option<Rect>) {
                 Block::default()
                     .title("Select project")
                     .borders(Borders::ALL)
-                    .border_style(Style::default().fg(if ps.input_mode { Color::Gray } else { Color::Cyan })),
+                    .border_style(Style::default().fg(if ps.input_mode {
+                        Color::Gray
+                    } else {
+                        Color::Cyan
+                    })),
             )
             .highlight_style(Style::default().add_modifier(Modifier::REVERSED));
         let mut state = ListState::default();
-        state.select(if ps.projects.is_empty() { None } else { Some(ps.cursor) });
+        state.select(if ps.projects.is_empty() {
+            None
+        } else {
+            Some(ps.cursor)
+        });
         f.render_stateful_widget(list, chunks[0], &mut state);
 
         let (input_title, input_text) = match &ps.delete_confirm {
@@ -471,7 +532,9 @@ pub fn render(f: &mut Frame, app: &App, render_area: Option<Rect>) {
                 "Delete project".to_string(),
                 format!("Delete empty project '{code}'? (y/n)"),
             ),
-            Some(DeleteConfirm::Typed { code, count, input, .. }) => (
+            Some(DeleteConfirm::Typed {
+                code, count, input, ..
+            }) => (
                 format!("Type '{code}' to delete {count} cards"),
                 input.clone(),
             ),
@@ -483,7 +546,11 @@ pub fn render(f: &mut Frame, app: &App, render_area: Option<Rect>) {
             Block::default()
                 .title(input_title)
                 .borders(Borders::ALL)
-                .border_style(Style::default().fg(if input_active { Color::Cyan } else { Color::Gray })),
+                .border_style(Style::default().fg(if input_active {
+                    Color::Cyan
+                } else {
+                    Color::Gray
+                })),
         );
         f.render_widget(input, chunks[1]);
         let cursor_pos = match &ps.delete_confirm {
@@ -514,13 +581,20 @@ pub fn draw_col(f: &mut Frame, app: &App, idx: usize, rect: Rect) {
 
     let border = if focused { Color::Cyan } else { Color::Gray };
 
-    let searching = app.search_state.as_ref().map_or(false, |s| !s.query.is_empty());
+    let searching = app
+        .search_state
+        .as_ref()
+        .is_some_and(|s| !s.query.is_empty());
 
     let items: Vec<ListItem> = col
         .cards
         .iter()
         .map(|c| {
-            let dimmed = searching && app.search_state.as_ref().map_or(false, |s| !SearchState::matches_card(c, &s.query));
+            let dimmed = searching
+                && app
+                    .search_state
+                    .as_ref()
+                    .is_some_and(|s| !SearchState::matches_card(c, &s.query));
             let prio_style = if dimmed {
                 Style::default().fg(Color::DarkGray)
             } else {
@@ -541,9 +615,10 @@ pub fn draw_col(f: &mut Frame, app: &App, idx: usize, rect: Rect) {
             } else {
                 Style::default().fg(Color::Cyan)
             };
-            let mut spans = vec![
-                Span::styled(format!("[{}] ", c.priority.short_label()), prio_style),
-            ];
+            let mut spans = vec![Span::styled(
+                format!("[{}] ", c.priority.short_label()),
+                prio_style,
+            )];
             if !c.project.is_empty() {
                 spans.push(Span::styled(format!("{} ", c.project), proj_style));
             }
@@ -610,7 +685,10 @@ fn wrap_text(text: &str, width: usize) -> Vec<String> {
         return vec![text.to_string()];
     }
     let mut lines = Vec::new();
-    for line in text.lines().chain(if text.ends_with('\n') { Some("") } else { None }) {
+    for line in text
+        .lines()
+        .chain(if text.ends_with('\n') { Some("") } else { None })
+    {
         if line.is_empty() {
             lines.push("".to_string());
             continue;
@@ -666,7 +744,9 @@ fn calculate_visual_cursor_pos(text: &str, cursor_pos: usize, width: usize) -> (
                     x = 0;
                 }
 
-                if target_pos_in_line >= current_pos_in_line && target_pos_in_line <= current_pos_in_line + word_len {
+                if target_pos_in_line >= current_pos_in_line
+                    && target_pos_in_line <= current_pos_in_line + word_len
+                {
                     // Cursor is in this word
                     let delta = target_pos_in_line - current_pos_in_line;
 

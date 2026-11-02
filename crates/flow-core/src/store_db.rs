@@ -29,12 +29,42 @@ const DEFAULT_COLUMNS: [(&str, &str); 4] = [
 /// Demo cards seeded for a fresh `demo` tenant:
 /// (id, column, title, description).
 const DEMO_CARDS: [(&str, &str, &str, &str); 6] = [
-    ("FLOW-1", "todo", "Add counts to column headers", "Show the number of issues in each column."),
-    ("FLOW-2", "todo", "Keyboard-first transitions", "Move selected issue left/right with one keystroke."),
-    ("FLOW-3", "in_progress", "Detail pane / modal", "Enter toggles detail; it follows selection."),
-    ("FLOW-4", "in_progress", "Polish focused column styling", "Subtle focus color; readable defaults."),
-    ("FLOW-5", "in_review", "Demo data realism pass", "Keep demo neutral and screenshot-friendly."),
-    ("FLOW-6", "done", "Initial ratatui scaffold", "Basic columns + selection + transitions."),
+    (
+        "FLOW-1",
+        "todo",
+        "Add counts to column headers",
+        "Show the number of issues in each column.",
+    ),
+    (
+        "FLOW-2",
+        "todo",
+        "Keyboard-first transitions",
+        "Move selected issue left/right with one keystroke.",
+    ),
+    (
+        "FLOW-3",
+        "in_progress",
+        "Detail pane / modal",
+        "Enter toggles detail; it follows selection.",
+    ),
+    (
+        "FLOW-4",
+        "in_progress",
+        "Polish focused column styling",
+        "Subtle focus color; readable defaults.",
+    ),
+    (
+        "FLOW-5",
+        "in_review",
+        "Demo data realism pass",
+        "Keep demo neutral and screenshot-friendly.",
+    ),
+    (
+        "FLOW-6",
+        "done",
+        "Initial ratatui scaffold",
+        "Basic columns + selection + transitions.",
+    ),
 ];
 
 #[derive(Debug)]
@@ -151,9 +181,8 @@ pub fn load_board(db_path: &Path, project: &str) -> Result<Board, StoreError> {
     ensure_tenant(&conn, project)?;
 
     let mut cols = Vec::new();
-    let mut stmt = conn.prepare(
-        "SELECT id, title FROM columns WHERE project_code = ?1 ORDER BY position",
-    )?;
+    let mut stmt =
+        conn.prepare("SELECT id, title FROM columns WHERE project_code = ?1 ORDER BY position")?;
     let col_rows: Vec<(String, String)> = stmt
         .query_map(params![project], |row| Ok((row.get(0)?, row.get(1)?)))?
         .collect::<Result<_, _>>()?;
@@ -176,7 +205,13 @@ fn load_cards(conn: &Connection, project: &str, col_id: &str) -> Result<Vec<Card
     )?;
     let rows: Vec<(String, String, String, String, String)> = stmt
         .query_map(params![project, col_id], |row| {
-            Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?))
+            Ok((
+                row.get(0)?,
+                row.get(1)?,
+                row.get(2)?,
+                row.get(3)?,
+                row.get(4)?,
+            ))
         })?
         .collect::<Result<_, _>>()?;
     drop(stmt);
@@ -203,9 +238,8 @@ fn load_cards(conn: &Connection, project: &str, col_id: &str) -> Result<Vec<Card
 pub fn load_board_all(db_path: &Path) -> Result<Board, StoreError> {
     let conn = open_db(db_path)?;
 
-    let mut stmt = conn.prepare(
-        "SELECT id, MIN(title) FROM columns GROUP BY id ORDER BY MIN(position), id",
-    )?;
+    let mut stmt =
+        conn.prepare("SELECT id, MIN(title) FROM columns GROUP BY id ORDER BY MIN(position), id")?;
     let col_rows: Vec<(String, String)> = stmt
         .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
         .collect::<Result<_, _>>()?;
@@ -229,7 +263,14 @@ fn load_cards_all(conn: &Connection, col_id: &str) -> Result<Vec<Card>, StoreErr
     )?;
     let rows: Vec<(String, String, String, String, String, String)> = stmt
         .query_map(params![col_id], |row| {
-            Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?, row.get(5)?))
+            Ok((
+                row.get(0)?,
+                row.get(1)?,
+                row.get(2)?,
+                row.get(3)?,
+                row.get(4)?,
+                row.get(5)?,
+            ))
         })?
         .collect::<Result<_, _>>()?;
     drop(stmt);
@@ -285,9 +326,18 @@ pub fn delete_project(db_path: &Path, project: &str) -> Result<usize, StoreError
         params![project],
         |row| row.get(0),
     )?;
-    tx.execute("DELETE FROM card_deps WHERE project_code = ?1", params![project])?;
-    tx.execute("DELETE FROM cards WHERE project_code = ?1", params![project])?;
-    tx.execute("DELETE FROM columns WHERE project_code = ?1", params![project])?;
+    tx.execute(
+        "DELETE FROM card_deps WHERE project_code = ?1",
+        params![project],
+    )?;
+    tx.execute(
+        "DELETE FROM cards WHERE project_code = ?1",
+        params![project],
+    )?;
+    tx.execute(
+        "DELETE FROM columns WHERE project_code = ?1",
+        params![project],
+    )?;
     tx.execute("DELETE FROM projects WHERE code = ?1", params![project])?;
     tx.commit()?;
     Ok(cards as usize)
@@ -303,7 +353,12 @@ fn load_deps(conn: &Connection, project: &str, card_id: &str) -> Result<Vec<Stri
     Ok(depends_on)
 }
 
-pub fn move_card(db_path: &Path, project: &str, card_id: &str, to_col_id: &str) -> Result<(), StoreError> {
+pub fn move_card(
+    db_path: &Path,
+    project: &str,
+    card_id: &str,
+    to_col_id: &str,
+) -> Result<(), StoreError> {
     let conn = open_db(db_path)?;
     ensure_tenant(&conn, project)?;
 
@@ -370,7 +425,9 @@ pub fn create_card(db_path: &Path, project: &str, to_col_id: &str) -> Result<Str
         );
         match res {
             Ok(_) => return Ok(id),
-            Err(rusqlite::Error::SqliteFailure(e, _)) if e.code == ErrorCode::ConstraintViolation => {
+            Err(rusqlite::Error::SqliteFailure(e, _))
+                if e.code == ErrorCode::ConstraintViolation =>
+            {
                 std::thread::sleep(std::time::Duration::from_millis(1));
                 continue;
             }
@@ -402,6 +459,7 @@ pub fn delete_card(db_path: &Path, project: &str, card_id: &str) -> Result<(), S
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn update_card(
     db_path: &Path,
     project: &str,
@@ -418,7 +476,14 @@ pub fn update_card(
     let updated = conn.execute(
         "UPDATE cards SET title = ?1, description = ?2, priority = ?3, assignee = ?4
          WHERE project_code = ?5 AND id = ?6",
-        params![title, description, priority.label(), assignee, project, card_id],
+        params![
+            title,
+            description,
+            priority.label(),
+            assignee,
+            project,
+            card_id
+        ],
     )?;
     if updated == 0 {
         return Err(StoreError::NotFound(card_id.to_string()));
@@ -446,7 +511,10 @@ fn now_millis() -> u128 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::{path::PathBuf, time::{SystemTime, UNIX_EPOCH}};
+    use std::{
+        path::PathBuf,
+        time::{SystemTime, UNIX_EPOCH},
+    };
 
     type TestResult = Result<(), Box<dyn std::error::Error>>;
 
@@ -512,7 +580,10 @@ mod tests {
         assert_eq!(card.priority, Priority::High);
         assert_eq!(card.assignee, "user@test.com");
         assert_eq!(card.project, "acme");
-        assert_eq!(card.depends_on, vec!["DEP-1".to_string(), "DEP-2".to_string()]);
+        assert_eq!(
+            card.depends_on,
+            vec!["DEP-1".to_string(), "DEP-2".to_string()]
+        );
 
         cleanup(&db);
         Ok(())
@@ -576,13 +647,34 @@ mod tests {
     fn update_replaces_dependencies() -> TestResult {
         let db = tmp_db();
         let id = create_card(&db, "acme", "todo").map_err(|e| format!("{e:?}"))?;
-        update_card(&db, "acme", &id, "t", "", Priority::Low, "", &["A".to_string()])
-            .map_err(|e| format!("{e:?}"))?;
-        update_card(&db, "acme", &id, "t", "", Priority::Low, "", &["B".to_string()])
-            .map_err(|e| format!("{e:?}"))?;
+        update_card(
+            &db,
+            "acme",
+            &id,
+            "t",
+            "",
+            Priority::Low,
+            "",
+            &["A".to_string()],
+        )
+        .map_err(|e| format!("{e:?}"))?;
+        update_card(
+            &db,
+            "acme",
+            &id,
+            "t",
+            "",
+            Priority::Low,
+            "",
+            &["B".to_string()],
+        )
+        .map_err(|e| format!("{e:?}"))?;
 
         let board = load_board(&db, "acme").map_err(|e| format!("{e:?}"))?;
-        assert_eq!(board.find_card(&id).unwrap().depends_on, vec!["B".to_string()]);
+        assert_eq!(
+            board.find_card(&id).unwrap().depends_on,
+            vec!["B".to_string()]
+        );
 
         cleanup(&db);
         Ok(())
@@ -593,8 +685,17 @@ mod tests {
         let db = tmp_db();
         let a = create_card(&db, "acme", "todo").map_err(|e| format!("{e:?}"))?;
         let b = create_card(&db, "acme", "todo").map_err(|e| format!("{e:?}"))?;
-        update_card(&db, "acme", &b, "t", "", Priority::Low, "", &[a.clone()])
-            .map_err(|e| format!("{e:?}"))?;
+        update_card(
+            &db,
+            "acme",
+            &b,
+            "t",
+            "",
+            Priority::Low,
+            "",
+            std::slice::from_ref(&a),
+        )
+        .map_err(|e| format!("{e:?}"))?;
 
         delete_card(&db, "acme", &b).map_err(|e| format!("{e:?}"))?;
         let board = load_board(&db, "acme").map_err(|e| format!("{e:?}"))?;
@@ -602,8 +703,17 @@ mod tests {
 
         // Deleting the dependency target clears the edge on the other side too.
         let c = create_card(&db, "acme", "todo").map_err(|e| format!("{e:?}"))?;
-        update_card(&db, "acme", &c, "t", "", Priority::Low, "", &[a.clone()])
-            .map_err(|e| format!("{e:?}"))?;
+        update_card(
+            &db,
+            "acme",
+            &c,
+            "t",
+            "",
+            Priority::Low,
+            "",
+            std::slice::from_ref(&a),
+        )
+        .map_err(|e| format!("{e:?}"))?;
         delete_card(&db, "acme", &a).map_err(|e| format!("{e:?}"))?;
         let board = load_board(&db, "acme").map_err(|e| format!("{e:?}"))?;
         assert!(board.find_card(&c).unwrap().depends_on.is_empty());
@@ -621,10 +731,20 @@ mod tests {
     fn priority_roundtrips() -> TestResult {
         let db = tmp_db();
         let id = create_card(&db, "acme", "todo").map_err(|e| format!("{e:?}"))?;
-        for p in [Priority::Low, Priority::Medium, Priority::High, Priority::Bug, Priority::Wishlist] {
+        for p in [
+            Priority::Low,
+            Priority::Medium,
+            Priority::High,
+            Priority::Bug,
+            Priority::Wishlist,
+        ] {
             update_card(&db, "acme", &id, "t", "", p, "", &[]).map_err(|e| format!("{e:?}"))?;
             let board = load_board(&db, "acme").map_err(|e| format!("{e:?}"))?;
-            assert_eq!(board.find_card(&id).unwrap().priority, p, "roundtrip failed for {p:?}");
+            assert_eq!(
+                board.find_card(&id).unwrap().priority,
+                p,
+                "roundtrip failed for {p:?}"
+            );
         }
 
         cleanup(&db);
@@ -670,11 +790,23 @@ mod tests {
         assert!(list_projects(&db).map_err(|e| format!("{e:?}"))?.is_empty());
 
         let a1 = create_card(&db, "aaa", "todo").map_err(|e| format!("{e:?}"))?;
-        update_card(&db, "aaa", &a1, "A1", "", Priority::High, "", &[]).map_err(|e| format!("{e:?}"))?;
+        update_card(&db, "aaa", &a1, "A1", "", Priority::High, "", &[])
+            .map_err(|e| format!("{e:?}"))?;
         let a2 = create_card(&db, "aaa", "todo").map_err(|e| format!("{e:?}"))?;
-        update_card(&db, "aaa", &a2, "A2", "", Priority::Low, "", &[a1.clone()]).map_err(|e| format!("{e:?}"))?;
+        update_card(
+            &db,
+            "aaa",
+            &a2,
+            "A2",
+            "",
+            Priority::Low,
+            "",
+            std::slice::from_ref(&a1),
+        )
+        .map_err(|e| format!("{e:?}"))?;
         let z1 = create_card(&db, "zzz", "done").map_err(|e| format!("{e:?}"))?;
-        update_card(&db, "zzz", &z1, "Z1", "", Priority::Medium, "", &[]).map_err(|e| format!("{e:?}"))?;
+        update_card(&db, "zzz", &z1, "Z1", "", Priority::Medium, "", &[])
+            .map_err(|e| format!("{e:?}"))?;
 
         let board = load_board_all(&db).map_err(|e| format!("{e:?}"))?;
         // Columns merged by id.
@@ -689,7 +821,12 @@ mod tests {
         // Placement preserved: a-cards in todo, z-card in done.
         assert_eq!(board.columns[0].cards.len(), 2);
         assert_eq!(board.columns[3].cards.len(), 1);
-        assert!(list_projects(&db).map_err(|e| format!("{e:?}"))?.iter().all(|c| c != "all"));
+        assert!(
+            list_projects(&db)
+                .map_err(|e| format!("{e:?}"))?
+                .iter()
+                .all(|c| c != "all")
+        );
 
         cleanup(&db);
         Ok(())
@@ -700,13 +837,31 @@ mod tests {
         let db = tmp_db();
         let a1 = create_card(&db, "aaa", "todo").map_err(|e| format!("{e:?}"))?;
         let a2 = create_card(&db, "aaa", "todo").map_err(|e| format!("{e:?}"))?;
-        update_card(&db, "aaa", &a2, "t", "", Priority::Low, "", &[a1.clone()])
-            .map_err(|e| format!("{e:?}"))?;
+        update_card(
+            &db,
+            "aaa",
+            &a2,
+            "t",
+            "",
+            Priority::Low,
+            "",
+            std::slice::from_ref(&a1),
+        )
+        .map_err(|e| format!("{e:?}"))?;
         let z1 = create_card(&db, "zzz", "done").map_err(|e| format!("{e:?}"))?;
 
-        assert_eq!(project_card_count(&db, "aaa").map_err(|e| format!("{e:?}"))?, 2);
-        assert_eq!(project_card_count(&db, "zzz").map_err(|e| format!("{e:?}"))?, 1);
-        assert_eq!(project_card_count(&db, "nope").map_err(|e| format!("{e:?}"))?, 0);
+        assert_eq!(
+            project_card_count(&db, "aaa").map_err(|e| format!("{e:?}"))?,
+            2
+        );
+        assert_eq!(
+            project_card_count(&db, "zzz").map_err(|e| format!("{e:?}"))?,
+            1
+        );
+        assert_eq!(
+            project_card_count(&db, "nope").map_err(|e| format!("{e:?}"))?,
+            0
+        );
 
         assert_eq!(delete_project(&db, "aaa").map_err(|e| format!("{e:?}"))?, 2);
         assert_eq!(
@@ -743,7 +898,10 @@ mod tests {
 
         // Other tenants stay empty.
         let other = load_board(&db, "acme").map_err(|e| format!("{e:?}"))?;
-        assert_eq!(other.columns.iter().map(|c| c.cards.len()).sum::<usize>(), 0);
+        assert_eq!(
+            other.columns.iter().map(|c| c.cards.len()).sum::<usize>(),
+            0
+        );
 
         cleanup(&db);
         Ok(())

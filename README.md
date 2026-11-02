@@ -94,13 +94,20 @@ every tenant in the database (or accepts a new code). The CLI ignores
 `FLOW_PROJECT` and requires `--project` on every invocation instead.
 
 The code `all` (any case) is reserved: it opens a read-only union of
-every tenant, filterable by project with `p` in the TUI.
+every tenant, filterable by project with `p` in the TUI. On a database with
+no tenants yet this view has no columns (standard columns are only seeded
+when a real tenant is first opened).
 
 `FLOW_PROJECT=demo` seeds a demo board with example cards on first use.
 
 Valid priorities: `LOW`, `MEDIUM`, `HIGH`, `BUG`, `WISHLIST`.
 
 ## Jira mode
+The Jira backend is **read-only** in the TUI/CLI: it supports loading the
+board and moving issues through transitions, but not creating, editing, or
+deleting cards, and it does not expose card dependencies (Jira has its own
+issue-link model). Card priorities are reported as `MEDIUM`.
+
 To load issues from Jira, set:
 ```bash
 FLOW_PROVIDER=jira
