@@ -518,13 +518,14 @@ pub fn create_card(db_path: &Path, project: &str, to_col_id: &str) -> Result<Str
     for _ in 0..10 {
         let id = format!("{}-{}", prefix, uuid::Uuid::new_v4());
         let now = now_millis() as i64;
+        let actor = std::env::var("FLOW_ACTOR").unwrap_or_default();
         let res = conn.execute(
-            "INSERT INTO cards (project_code, id, column_id, title, description, priority, assignee, position, version, created_at, updated_at)
+            "INSERT INTO cards (project_code, id, column_id, title, description, priority, assignee, position, version, created_at, updated_at, created_by, updated_by)
              VALUES (?1, ?2, ?3, 'New card', '', 'MEDIUM', '',
                 (SELECT COALESCE(MAX(position), -1) + 1 FROM cards
                  WHERE project_code = ?1 AND column_id = ?3),
-                1, ?4, ?4)",
-            params![project, id, to_col_id, now],
+                1, ?4, ?4, ?5, ?5)",
+            params![project, id, to_col_id, now, actor],
         );
         match res {
             Ok(_) => return Ok(id),
@@ -578,7 +579,7 @@ pub fn update_card(
 
     let updated = tx.execute(
         "UPDATE cards SET title = ?1, description = ?2, priority = ?3, assignee = ?4,
-            version = version + 1, updated_at = ?7
+            version = version + 1, updated_at = ?7, updated_by = ?8
          WHERE project_code = ?5 AND id = ?6",
         params![
             title,
@@ -587,7 +588,8 @@ pub fn update_card(
             assignee,
             project,
             card_id,
-            now_millis() as i64
+            now_millis() as i64,
+            std::env::var("FLOW_ACTOR").unwrap_or_default()
         ],
     )?;
     if updated == 0 {

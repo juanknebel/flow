@@ -1,7 +1,10 @@
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::PathBuf;
+use std::sync::Mutex;
 use std::thread;
+
+static DB_LOCK: Mutex<()> = Mutex::new(());
 
 use flow_core::provider;
 use serde::{Deserialize, Serialize};
@@ -74,6 +77,7 @@ fn handle_stream(stream: UnixStream) {
 }
 
 fn dispatch(id: u64, method: &str, params: Value) -> Response {
+    let _guard = DB_LOCK.lock().unwrap();
     let res = (|| -> Result<Value, String> {
         match method {
             "ping" => Ok(Value::String("pong".to_string())),
@@ -187,6 +191,29 @@ fn dispatch(id: u64, method: &str, params: Value) -> Response {
                 let mut p = provider::from_env();
                 let n = p.delete_project(&project).map_err(|e| e.to_string())?;
                 Ok(serde_json::json!(n))
+            }
+            "changes_since" => {
+                let project = str_param(&params, "project");
+                let since = params.get("since").and_then(Value::as_i64).unwrap_or(0);
+                let project_opt = if project.is_empty() {
+                    None
+                } else {
+                    Some(project.clone())
+                };
+                let mut p = provider::from_env_with_project(project_opt);
+                let board = p.load_board().map_err(|e| e.to_string())?;
+                let mut out = Vec::new();
+                for col in &board.columns {
+                    for card in &col.cards {
+                        if card.updated_at > since {
+                            out.push(serde_json::json!({
+                                "column_id": col.id,
+                                "card": card,
+                            }));
+                        }
+                    }
+                }
+                Ok(Value::Array(out))
             }
             _ => Err(format!("unknown method: {method}")),
         }

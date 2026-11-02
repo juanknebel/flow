@@ -59,7 +59,8 @@ fn handle(req: RpcRequest) {
                         {"name":"load_board","description":"Load a board","inputSchema":{"type":"object","properties":{"project":{"type":"string"}},"required":["project"]}},
                         {"name":"create_card","description":"Create a card","inputSchema":{"type":"object","properties":{"project":{"type":"string"},"column_id":{"type":"string"},"title":{"type":"string"}},"required":["project","column_id"]}},
                         {"name":"move_card","description":"Move a card","inputSchema":{"type":"object","properties":{"project":{"type":"string"},"card_id":{"type":"string"},"column_id":{"type":"string"}},"required":["project","card_id","column_id"]}},
-                        {"name":"delete_card","description":"Delete a card","inputSchema":{"type":"object","properties":{"project":{"type":"string"},"card_id":{"type":"string"}},"required":["project","card_id"]}}
+                        {"name":"delete_card","description":"Delete a card","inputSchema":{"type":"object","properties":{"project":{"type":"string"},"card_id":{"type":"string"}},"required":["project","card_id"]}},
+                        {"name":"changes_since","description":"Cards changed after timestamp (millis)","inputSchema":{"type":"object","properties":{"project":{"type":"string"},"since":{"type":"integer"}},"required":["project"]}}
                     ]
                 }
             }));
@@ -146,6 +147,21 @@ fn call_tool(name: &str, args: &Value) -> Result<Value, String> {
             let mut p = provider_for(project);
             p.delete_card(card_id).map_err(|e| e.to_string())?;
             Ok(json!({"ok": true}))
+        }
+        "changes_since" => {
+            let project = args.get("project").and_then(Value::as_str).unwrap_or("");
+            let since = args.get("since").and_then(Value::as_i64).unwrap_or(0);
+            let mut p = provider_for(project);
+            let board = p.load_board().map_err(|e| e.to_string())?;
+            let mut out = Vec::new();
+            for col in &board.columns {
+                for card in &col.cards {
+                    if card.updated_at > since {
+                        out.push(json!({"column_id": col.id, "card": card}));
+                    }
+                }
+            }
+            Ok(json!(out))
         }
         _ => Err(format!("unknown tool: {name}")),
     }
