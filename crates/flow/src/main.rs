@@ -16,7 +16,7 @@ use ratatui::{
     backend::CrosstermBackend,
 };
 
-use flow_core::{Board, provider, model::Priority};
+use flow_core::{Board, provider, model::{Card, Priority}};
 use flow_tui::{
     App, Action, DeleteConfirm, EditState, EditFocus, SearchState, ProjectFilterState, ProjectSelectState,
     app::{parse_depends_on_field, format_depends_on_field},
@@ -560,15 +560,21 @@ fn run_tui(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> io::Result<
                         match k.code {
                             crossterm::event::KeyCode::Char('y') | crossterm::event::KeyCode::Char('Y') => {
                                 if let Some(card_id) = selected_card_id(&app) {
+                                    let deleted = app.board.columns.get(app.col).and_then(|col| {
+                                        col.cards
+                                            .get(app.row)
+                                            .map(|card| (card.clone(), col.id.clone()))
+                                    });
                                     if let Err(e) = provider.delete_card(&card_id) {
                                         app.banner = Some(format!("Delete failed: {e}"));
                                     } else {
+                                        app.last_deleted = deleted;
                                         match provider.load_board() {
                                             Ok(mut b) => {
                                                 b.sort_cards_with(app.sort_order);
                                                 app.board = b;
                                                 app.clamp();
-                                                app.banner = Some(format!("Card {card_id} deleted"));
+                                                app.banner = Some(format!("Card {card_id} deleted — press u to undo"));
                                             }
                                             Err(e) => {
                                                 app.banner = Some(format!("Reload failed: {e}"))
@@ -594,7 +600,7 @@ fn run_tui(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> io::Result<
                         }
 
                         if provider.is_read_only()
-                            && matches!(a, Action::Add | Action::Edit | Action::Delete | Action::MoveLeft | Action::MoveRight)
+                            && matches!(a, Action::Add | Action::Edit | Action::Delete | Action::MoveLeft | Action::MoveRight | Action::Undo)
                         {
                             app.banner = Some("All-projects view is read-only".to_string());
                             continue;
@@ -649,6 +655,27 @@ fn run_tui(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> io::Result<
                             }
                             Action::Search => {
                                 app.search_state = Some(SearchState::new());
+                            }
+                            Action::Undo => {
+                                if quitting {
+                                    continue;
+                                }
+                                let Some((card, col_id)) = app.last_deleted.take() else {
+                                    app.banner = Some("Nothing to undo".to_string());
+                                    continue;
+                                };
+                                match restore_card(&mut provider, &card, &col_id) {
+                                    Ok(new_id) => match provider.load_board() {
+                                        Ok(mut b) => {
+                                            b.sort_cards_with(app.sort_order);
+                                            app.board = b;
+                                            app.clamp();
+                                            app.banner = Some(format!("Restored as {new_id}"));
+                                        }
+                                        Err(e) => app.banner = Some(format!("Reload failed: {e}")),
+                                    },
+                                    Err(e) => app.banner = Some(format!("Undo failed: {e}")),
+                                }
                             }
                             Action::ProjectFilter => {
                                 if !provider.supports_project_filter() {
@@ -774,6 +801,26 @@ fn run_tui(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> io::Result<
     }
 
     Ok(())
+}
+
+/// Recreates a previously deleted card in `col_id` with the same content
+/// (new id, since providers don't support choosing one). Used by undo.
+fn restore_card(
+    provider: &mut Box<dyn provider::Provider>,
+    card: &Card,
+    col_id: &str,
+) -> Result<String, provider::ProviderError> {
+    let new_id = provider.create_card(col_id, &card.project)?;
+    provider.update_card(
+        &new_id,
+        &card.title,
+        &card.description,
+        card.priority,
+        &card.assignee,
+        &card.project,
+        &card.depends_on,
+    )?;
+    Ok(new_id)
 }
 
 fn selected_card_id(app: &App) -> Option<String> {

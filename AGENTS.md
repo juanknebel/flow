@@ -68,6 +68,8 @@ FLOW_BOARD_PATH=./.board flow-cli --project flow move <card_id> <col>
 FLOW_BOARD_PATH=./.board flow-cli --project flow edit <card_id> --title "new title"
 FLOW_BOARD_PATH=./.board flow-cli --project flow delete <card_id>
 FLOW_BOARD_PATH=./.board flow-cli --project <code> delete-project --confirm <code>  # delete a whole tenant
+FLOW_BOARD_PATH=./.board flow-cli --project flow export --out flow-backup.json     # back up all cards as JSON
+FLOW_BOARD_PATH=./.board flow-cli --project flow import flow-backup.json          # restore/copy cards from a JSON export
 ```
 
 Use `flow-cli` for board management and `flow` to launch the TUI. Use this board to track tasks, bugs, and features for the project.

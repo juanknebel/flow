@@ -61,7 +61,9 @@ EXAMPLES:
   flow-cli --project acme edit FLOW-5 --depends-on FLOW-1 --depends-on FLOW-2  # repeated flag
   flow-cli --project acme edit FLOW-5 --depends-on \"\"                  # clear all dependencies
   flow-cli --project acme move FLOW-1 done
-  flow-cli --project oldproj delete-project --confirm oldproj"
+  flow-cli --project oldproj delete-project --confirm oldproj
+  flow-cli --project acme export --out acme-backup.json
+  flow-cli --project acme-copy import acme-backup.json"
 )]
 pub struct Cli {
     #[command(subcommand)]
@@ -158,6 +160,20 @@ pub enum Command {
 
     /// List column ids, titles, and card counts
     Columns,
+
+    /// Export the project's cards as JSON (to stdout, or --out <file>)
+    Export {
+        /// Write to this file instead of stdout
+        #[arg(long)]
+        out: Option<String>,
+    },
+
+    /// Import cards from a JSON export into the project. Cards get new
+    /// ids; dependencies are remapped to the new ids automatically.
+    Import {
+        /// Path to a JSON file produced by `export`
+        file: String,
+    },
 }
 
 pub fn run(cmd: Command, fmt: Format, project: Option<&str>) -> io::Result<()> {
@@ -314,6 +330,60 @@ pub fn run(cmd: Command, fmt: Format, project: Option<&str>) -> io::Result<()> {
                 .load_board()
                 .map_err(|e| io::Error::other(e.to_string()))?;
             println!("{}", format::format_columns(&board, fmt).map_err(io::Error::other)?);
+        }
+        Command::Export { out } => {
+            let mut board = prov
+                .load_board()
+                .map_err(|e| io::Error::other(e.to_string()))?;
+            if !tenant.eq_ignore_ascii_case("all") {
+                board.apply_project_filter(std::slice::from_ref(&tenant));
+            }
+            let json = flow_core::exportimport::to_json(&flow_core::exportimport::export_board(&board, &tenant))
+                .map_err(io::Error::other)?;
+            match out {
+                Some(path) => std::fs::write(&path, json)?,
+                None => println!("{json}"),
+            }
+        }
+        Command::Import { file } => {
+            let json = std::fs::read_to_string(&file)?;
+            let export = flow_core::exportimport::parse_export(&json).map_err(io::Error::other)?;
+
+            let mut id_map = std::collections::HashMap::new();
+            let mut created = Vec::new();
+            for card in &export.cards {
+                let new_id = prov
+                    .create_card(&card.column_id, &tenant)
+                    .map_err(|e| io::Error::other(e.to_string()))?;
+                id_map.insert(card.id.clone(), new_id.clone());
+                created.push(new_id);
+            }
+            for (card, new_id) in export.cards.iter().zip(created.iter()) {
+                let depends_on: Vec<String> = card
+                    .depends_on
+                    .iter()
+                    .filter_map(|old_id| id_map.get(old_id).cloned())
+                    .collect();
+                prov.update_card(
+                    new_id,
+                    &card.title,
+                    &card.description,
+                    Priority::from_str(&card.priority),
+                    &card.assignee,
+                    &tenant,
+                    &depends_on,
+                )
+                .map_err(|e| io::Error::other(e.to_string()))?;
+            }
+
+            let count_str = created.len().to_string();
+            println!(
+                "{}",
+                format::format_result(
+                    &[("action", "import"), ("project", &tenant), ("cards_created", &count_str)],
+                    fmt,
+                ).map_err(io::Error::other)?
+            );
         }
     }
 

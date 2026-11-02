@@ -27,7 +27,7 @@ pub fn help_text(app: &App) -> String {
         format!(" [{}]", app.project_filter.join(","))
     };
     format!(
-        "h/l ←/→ focus  j/k ↑/↓ select  H/L move  a/n new  e edit  d del  Enter detail  r refresh  s sort({})  / search  p project{}  P switch-project  Esc/q quit",
+        "h/l ←/→ focus  j/k ↑/↓ select  H/L move  a/n new  e edit  d del  u undo  Enter detail  r refresh  s sort({})  / search  p project{}  P switch-project  Esc/q quit",
         app.sort_order.label(),
         filter_info,
     )
@@ -50,6 +50,7 @@ pub fn action_from_key(code: KeyCode) -> Option<Action> {
         KeyCode::Enter => Action::ToggleDetail,
         KeyCode::Char('r') => Action::Refresh,
         KeyCode::Char('d') => Action::Delete,
+        KeyCode::Char('u') => Action::Undo,
         KeyCode::Char('a') | KeyCode::Char('n') => Action::Add,
         KeyCode::Char('e') => Action::Edit,
         KeyCode::Char('s') => Action::ToggleSort,

@@ -19,7 +19,12 @@ Opening a browser just to move an issue is slow and breaks focus.
 - **Keyboard-first**: One-keystroke transitions (`H` / `L`), `hjkl` and arrow-key navigation.
 - **Card Priority**: Color-coded priority levels (Low, Medium, High, Bug, Wishlist) visible on the board and editable in the popup. Cards are automatically sorted by priority (Bug → High → Medium → Low → Wishlist), then alphabetically by title.
 - **Card Assignee**: Assign cards to team members (email or user id) via CLI (`--assignee`) or the TUI edit popup.
+- **Card Dependencies**: Cards can depend on other cards (`--depends-on`, or the Depends On field in the editor). Blocked cards show an indicator on the board; a card can't be deleted while others still depend on it, and cycles/self-dependencies/missing ids are rejected.
+- **Search**: Fuzzy-free substring search (`/`) over title and description, with next/previous match navigation.
+- **Project filter & all-projects view**: `FLOW_PROJECT=all` opens a read-only union of every tenant, filterable to a subset of projects (`p`) in the TUI.
+- **Undo delete**: Recover the last deleted card (`u`) — recreated with the same content in the same column.
 - **Integrated Editing**: Create/edit cards directly in an integrated popup with full cursor support, word wrapping, and familiar shortcuts.
+- **Export / Import**: Back up or copy a project's cards as JSON via `flow-cli` (`export` / `import`), with dependencies remapped automatically.
 - **Clean Visuals**: Terminal-native design powered by `ratatui` with responsive layouts.
 
 ## Project Structure
@@ -110,6 +115,9 @@ JIRA_BOARD_ID=123
 ### Navigation
 - `h` / `l` or `←` / `→` — focus column
 - `j` / `k` or `↑` / `↓` — select card
+- `s` — toggle sort order (ascending/descending priority)
+- `/` — search by title/description; `↓`/`↑` jump to next/previous match while typing, `Enter`/`Esc` to close
+- `p` — filter by project (all-projects view only)
 - `P` — switch project (local)
 - `d` (in project picker) — delete project (type the code to confirm when it has cards)
 - `H` / `L` — move card left / right
@@ -122,12 +130,13 @@ JIRA_BOARD_ID=123
 - `a` / `n` — create a new card
 - `e` — edit selected card
 - `d` — delete selected card with confirmation
+- `u` — undo the last delete (recreates the card with the same content)
 
 ### Integrated Editor
 - `←` / `→` — move cursor (cycle priority when Priority field is focused)
 - `Home` / `End` — move to start/end of line
 - `Backspace` / `Delete` — delete character
-- `Tab` — cycle focus: Title → Priority → Assignee → Description
+- `Tab` — cycle focus: Title → Depends On → Priority → Assignee → Description
 - `Enter` — save and close
 - `Esc` — cancel changes
 
@@ -153,11 +162,20 @@ flow-cli --project acme move FLOW-1 in_progress
 # Delete a card permanently
 flow-cli --project acme delete FLOW-1
 
+# Make a card depend on another (comma-separated or repeated flag)
+flow-cli --project acme edit FLOW-5 --depends-on FLOW-1,FLOW-2
+
 # Delete a whole project (requires --confirm when it has cards)
 flow-cli --project oldproj delete-project --confirm oldproj
 
 # List column IDs
 flow-cli --project acme columns
+
+# Back up a project's cards as JSON
+flow-cli --project acme export --out acme-backup.json
+
+# Restore/copy cards from a JSON export (dependencies are remapped automatically)
+flow-cli --project acme-copy import acme-backup.json
 ```
 
 Output format can be changed with `-f`: `plain`, `json`, `xml`, `csv`, `table`, `markdown`.

@@ -100,6 +100,7 @@ impl Priority {
     }
 }
 
+#[derive(Clone)]
 pub struct Card {
     pub id: String,
     pub title: String,

@@ -19,6 +19,7 @@ pub enum Action {
     Search,
     ProjectFilter,
     SwitchProject,
+    Undo,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -415,6 +416,9 @@ pub struct App {
     pub project_filter: Vec<String>,
     pub banner: Option<String>,
     pub sort_order: SortOrder,
+    /// Most recently deleted card (and the column it lived in), for undo.
+    /// Cleared once restored.
+    pub last_deleted: Option<(Card, String)>,
 }
 
 impl App {
@@ -432,6 +436,7 @@ impl App {
             project_filter: Vec::new(),
             banner: None,
             sort_order: SortOrder::default(),
+            last_deleted: None,
         }
     }
 
@@ -556,7 +561,7 @@ impl App {
                 self.sort_order = self.sort_order.toggle();
                 self.board.sort_cards_with(self.sort_order);
             }
-            Action::Refresh | Action::MoveLeft | Action::MoveRight | Action::Add | Action::Edit | Action::Search | Action::ProjectFilter | Action::SwitchProject => {}
+            Action::Refresh | Action::MoveLeft | Action::MoveRight | Action::Add | Action::Edit | Action::Search | Action::ProjectFilter | Action::SwitchProject | Action::Undo => {}
         }
         false
     }
