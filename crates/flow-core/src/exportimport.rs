@@ -77,6 +77,11 @@ mod tests {
                     assignee: "me".into(),
                     project: "acme".into(),
                     depends_on: vec!["A-2".into()],
+                    version: 1,
+                    created_at: 0,
+                    updated_at: 0,
+                    created_by: String::new(),
+                    updated_by: String::new(),
                 }],
             }],
         }

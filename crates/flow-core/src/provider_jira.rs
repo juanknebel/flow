@@ -254,6 +254,11 @@ impl Provider for JiraProvider {
                     // so dependency validation is a local-provider-only
                     // feature for now.
                     depends_on: Vec::new(),
+                    version: 1,
+                    created_at: 0,
+                    updated_at: 0,
+                    created_by: String::new(),
+                    updated_by: String::new(),
                 });
             }
         }

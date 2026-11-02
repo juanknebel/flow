@@ -1,4 +1,4 @@
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
 pub enum SortOrder {
     /// Higher priority first (Bug → High → Medium → Low → Wishlist)
     #[default]
@@ -23,7 +23,7 @@ impl SortOrder {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum Priority {
     Low,
     Medium,
@@ -96,7 +96,7 @@ impl Priority {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub struct Card {
     pub id: String,
     pub title: String,
@@ -107,14 +107,26 @@ pub struct Card {
     /// Ids of other cards this one depends on (blocks on). An empty vec
     /// means no dependencies.
     pub depends_on: Vec<String>,
+    /// Optimistic-concurrency version; incremented on every update.
+    pub version: u64,
+    /// Unix millis when the card was created.
+    pub created_at: i64,
+    /// Unix millis of the last mutation.
+    pub updated_at: i64,
+    /// Actor that created the card (empty for legacy rows).
+    pub created_by: String,
+    /// Actor of the last mutation (empty for legacy rows).
+    pub updated_by: String,
 }
 
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub struct Column {
     pub id: String,
     pub title: String,
     pub cards: Vec<Card>,
 }
 
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub struct Board {
     pub columns: Vec<Column>,
 }
@@ -257,6 +269,11 @@ mod tests {
             assignee: String::new(),
             project: String::new(),
             depends_on: deps.iter().map(|s| s.to_string()).collect(),
+            version: 1,
+            created_at: 0,
+            updated_at: 0,
+            created_by: String::new(),
+            updated_by: String::new(),
         }
     }
 

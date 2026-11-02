@@ -197,5 +197,22 @@ cargo install --path crates/flow       # TUI
 cargo install --path crates/flow-cli   # CLI
 ```
 
+## Local daemon (optional, for agent swarms)
+
+`flow` can run a local coordination daemon over a Unix socket:
+
+```bash
+flow daemon
+```
+
+The daemon is the single writer of the SQLite database and exposes a
+JSON-RPC interface (newline-delimited JSON) on
+`$FLOW_DAEMON_SOCKET` (default `~/.config/flow/flow.sock`). Methods:
+`ping`, `list_projects`, `load_board`, `create_card`, `update_card`,
+`move_card`, `delete_card`, `project_card_count`, `delete_project`.
+
+This is intended for multi-agent swarms running on one machine. When the
+daemon is not running, the CLI and TUI access SQLite directly.
+
 ## License
 MIT

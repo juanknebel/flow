@@ -70,6 +70,7 @@ const DEMO_CARDS: [(&str, &str, &str, &str); 6] = [
 #[derive(Debug)]
 pub enum StoreError {
     NotFound(String),
+    Conflict(String),
     Db(rusqlite::Error),
     Io(io::Error),
 }
@@ -98,6 +99,7 @@ fn open_db(db_path: &Path) -> Result<Connection, StoreError> {
     // No WAL on purpose: the database must stay a single file.
     conn.execute_batch("PRAGMA busy_timeout = 5000; PRAGMA foreign_keys = ON;")?;
     ensure_schema(&conn)?;
+    migrate_schema(&conn)?;
     Ok(conn)
 }
 
@@ -123,6 +125,11 @@ fn ensure_schema(conn: &Connection) -> Result<(), StoreError> {
             priority     TEXT NOT NULL DEFAULT 'MEDIUM',
             assignee     TEXT NOT NULL DEFAULT '',
             position     INTEGER NOT NULL DEFAULT 0,
+            version      INTEGER NOT NULL DEFAULT 1,
+            created_at   INTEGER NOT NULL DEFAULT 0,
+            updated_at   INTEGER NOT NULL DEFAULT 0,
+            created_by   TEXT NOT NULL DEFAULT '',
+            updated_by   TEXT NOT NULL DEFAULT '',
             PRIMARY KEY (project_code, id),
             FOREIGN KEY (project_code, column_id) REFERENCES columns(project_code, id)
         );
@@ -134,6 +141,29 @@ fn ensure_schema(conn: &Connection) -> Result<(), StoreError> {
             FOREIGN KEY (project_code, card_id) REFERENCES cards(project_code, id) ON DELETE CASCADE
         );",
     )?;
+    Ok(())
+}
+
+/// Adds columns introduced after the initial schema to pre-existing databases.
+fn migrate_schema(conn: &Connection) -> Result<(), StoreError> {
+    let mut stmt = conn.prepare("PRAGMA table_info(cards)")?;
+    let existing: std::collections::HashSet<String> = stmt
+        .query_map([], |row| row.get::<_, String>(1))?
+        .collect::<Result<_, _>>()?;
+    drop(stmt);
+
+    let additions = [
+        ("version", "INTEGER NOT NULL DEFAULT 1"),
+        ("created_at", "INTEGER NOT NULL DEFAULT 0"),
+        ("updated_at", "INTEGER NOT NULL DEFAULT 0"),
+        ("created_by", "TEXT NOT NULL DEFAULT ''"),
+        ("updated_by", "TEXT NOT NULL DEFAULT ''"),
+    ];
+    for (name, decl) in additions {
+        if !existing.contains(name) {
+            conn.execute(&format!("ALTER TABLE cards ADD COLUMN {name} {decl}"), [])?;
+        }
+    }
     Ok(())
 }
 
@@ -198,12 +228,24 @@ pub fn load_board(db_path: &Path, project: &str) -> Result<Board, StoreError> {
     Ok(board)
 }
 
+#[allow(clippy::type_complexity)]
 fn load_cards(conn: &Connection, project: &str, col_id: &str) -> Result<Vec<Card>, StoreError> {
     let mut stmt = conn.prepare(
-        "SELECT id, title, description, priority, assignee
+        "SELECT id, title, description, priority, assignee, version, created_at, updated_at, created_by, updated_by
          FROM cards WHERE project_code = ?1 AND column_id = ?2 ORDER BY position",
     )?;
-    let rows: Vec<(String, String, String, String, String)> = stmt
+    let rows: Vec<(
+        String,
+        String,
+        String,
+        String,
+        String,
+        i64,
+        i64,
+        i64,
+        String,
+        String,
+    )> = stmt
         .query_map(params![project, col_id], |row| {
             Ok((
                 row.get(0)?,
@@ -211,13 +253,30 @@ fn load_cards(conn: &Connection, project: &str, col_id: &str) -> Result<Vec<Card
                 row.get(2)?,
                 row.get(3)?,
                 row.get(4)?,
+                row.get(5)?,
+                row.get(6)?,
+                row.get(7)?,
+                row.get(8)?,
+                row.get(9)?,
             ))
         })?
         .collect::<Result<_, _>>()?;
     drop(stmt);
 
     let mut cards = Vec::with_capacity(rows.len());
-    for (id, title, description, priority, assignee) in rows {
+    for (
+        id,
+        title,
+        description,
+        priority,
+        assignee,
+        version,
+        created_at,
+        updated_at,
+        created_by,
+        updated_by,
+    ) in rows
+    {
         let depends_on = load_deps(conn, project, &id)?;
         cards.push(Card {
             id,
@@ -227,6 +286,11 @@ fn load_cards(conn: &Connection, project: &str, col_id: &str) -> Result<Vec<Card
             assignee,
             project: project.to_string(),
             depends_on,
+            version: version as u64,
+            created_at,
+            updated_at,
+            created_by,
+            updated_by,
         });
     }
     Ok(cards)
@@ -256,12 +320,25 @@ pub fn load_board_all(db_path: &Path) -> Result<Board, StoreError> {
     Ok(board)
 }
 
+#[allow(clippy::type_complexity)]
 fn load_cards_all(conn: &Connection, col_id: &str) -> Result<Vec<Card>, StoreError> {
     let mut stmt = conn.prepare(
-        "SELECT project_code, id, title, description, priority, assignee
+        "SELECT project_code, id, title, description, priority, assignee, version, created_at, updated_at, created_by, updated_by
          FROM cards WHERE column_id = ?1 ORDER BY project_code, position",
     )?;
-    let rows: Vec<(String, String, String, String, String, String)> = stmt
+    let rows: Vec<(
+        String,
+        String,
+        String,
+        String,
+        String,
+        String,
+        i64,
+        i64,
+        i64,
+        String,
+        String,
+    )> = stmt
         .query_map(params![col_id], |row| {
             Ok((
                 row.get(0)?,
@@ -270,13 +347,31 @@ fn load_cards_all(conn: &Connection, col_id: &str) -> Result<Vec<Card>, StoreErr
                 row.get(3)?,
                 row.get(4)?,
                 row.get(5)?,
+                row.get(6)?,
+                row.get(7)?,
+                row.get(8)?,
+                row.get(9)?,
+                row.get(10)?,
             ))
         })?
         .collect::<Result<_, _>>()?;
     drop(stmt);
 
     let mut cards = Vec::with_capacity(rows.len());
-    for (project, id, title, description, priority, assignee) in rows {
+    for (
+        project,
+        id,
+        title,
+        description,
+        priority,
+        assignee,
+        version,
+        created_at,
+        updated_at,
+        created_by,
+        updated_by,
+    ) in rows
+    {
         let depends_on = load_deps(conn, &project, &id)?;
         cards.push(Card {
             id,
@@ -286,6 +381,11 @@ fn load_cards_all(conn: &Connection, col_id: &str) -> Result<Vec<Card>, StoreErr
             assignee,
             project,
             depends_on,
+            version: version as u64,
+            created_at,
+            updated_at,
+            created_by,
+            updated_by,
         });
     }
     Ok(cards)
@@ -386,12 +486,15 @@ pub fn move_card(
         return Err(StoreError::NotFound(to_col_id.to_string()));
     }
 
+    let now = now_millis() as i64;
     conn.execute(
         "UPDATE cards SET column_id = ?1,
             position = (SELECT COALESCE(MAX(position), -1) + 1 FROM cards
-                        WHERE project_code = ?2 AND column_id = ?1)
+                        WHERE project_code = ?2 AND column_id = ?1),
+            version = version + 1,
+            updated_at = ?4
          WHERE project_code = ?2 AND id = ?3",
-        params![to_col_id, project, card_id],
+        params![to_col_id, project, card_id, now],
     )?;
     Ok(())
 }
@@ -412,23 +515,22 @@ pub fn create_card(db_path: &Path, project: &str, to_col_id: &str) -> Result<Str
     }
 
     let prefix = project.to_uppercase();
-    // Millis-based ids can collide under rapid creates; retry with a fresh
-    // timestamp instead of surfacing a primary-key violation.
-    for _ in 0..100 {
-        let id = format!("{}-{}", prefix, now_millis());
+    for _ in 0..10 {
+        let id = format!("{}-{}", prefix, uuid::Uuid::new_v4());
+        let now = now_millis() as i64;
         let res = conn.execute(
-            "INSERT INTO cards (project_code, id, column_id, title, description, priority, assignee, position)
+            "INSERT INTO cards (project_code, id, column_id, title, description, priority, assignee, position, version, created_at, updated_at)
              VALUES (?1, ?2, ?3, 'New card', '', 'MEDIUM', '',
                 (SELECT COALESCE(MAX(position), -1) + 1 FROM cards
-                 WHERE project_code = ?1 AND column_id = ?3))",
-            params![project, id, to_col_id],
+                 WHERE project_code = ?1 AND column_id = ?3),
+                1, ?4, ?4)",
+            params![project, id, to_col_id, now],
         );
         match res {
             Ok(_) => return Ok(id),
             Err(rusqlite::Error::SqliteFailure(e, _))
                 if e.code == ErrorCode::ConstraintViolation =>
             {
-                std::thread::sleep(std::time::Duration::from_millis(1));
                 continue;
             }
             Err(e) => return Err(StoreError::Db(e)),
@@ -470,11 +572,13 @@ pub fn update_card(
     assignee: &str,
     depends_on: &[String],
 ) -> Result<(), StoreError> {
-    let conn = open_db(db_path)?;
+    let mut conn = open_db(db_path)?;
     ensure_tenant(&conn, project)?;
+    let tx = conn.transaction()?;
 
-    let updated = conn.execute(
-        "UPDATE cards SET title = ?1, description = ?2, priority = ?3, assignee = ?4
+    let updated = tx.execute(
+        "UPDATE cards SET title = ?1, description = ?2, priority = ?3, assignee = ?4,
+            version = version + 1, updated_at = ?7
          WHERE project_code = ?5 AND id = ?6",
         params![
             title,
@@ -482,23 +586,69 @@ pub fn update_card(
             priority.label(),
             assignee,
             project,
-            card_id
+            card_id,
+            now_millis() as i64
         ],
     )?;
     if updated == 0 {
         return Err(StoreError::NotFound(card_id.to_string()));
     }
-    conn.execute(
+    tx.execute(
         "DELETE FROM card_deps WHERE project_code = ?1 AND card_id = ?2",
         params![project, card_id],
     )?;
     for dep in depends_on {
-        conn.execute(
+        tx.execute(
             "INSERT OR IGNORE INTO card_deps (project_code, card_id, depends_on) VALUES (?1, ?2, ?3)",
             params![project, card_id, dep],
         )?;
     }
+    tx.commit()?;
     Ok(())
+}
+
+/// Like [`update_card`], but fails with [`StoreError::Conflict`] when the card's
+/// current version does not match `expected_version` (when provided). Pass
+/// `None` to skip the check.
+#[allow(clippy::too_many_arguments)]
+pub fn update_card_versioned(
+    db_path: &Path,
+    project: &str,
+    card_id: &str,
+    title: &str,
+    description: &str,
+    priority: Priority,
+    assignee: &str,
+    depends_on: &[String],
+    expected_version: Option<u64>,
+) -> Result<(), StoreError> {
+    if let Some(ev) = expected_version {
+        let conn = open_db(db_path)?;
+        let current: Option<i64> = conn
+            .query_row(
+                "SELECT version FROM cards WHERE project_code = ?1 AND id = ?2",
+                params![project, card_id],
+                |row| row.get(0),
+            )
+            .optional()?;
+        if let Some(cv) = current
+            && cv as u64 != ev
+        {
+            return Err(StoreError::Conflict(format!(
+                "version mismatch: expected {ev}, found {cv}"
+            )));
+        }
+    }
+    update_card(
+        db_path,
+        project,
+        card_id,
+        title,
+        description,
+        priority,
+        assignee,
+        depends_on,
+    )
 }
 
 fn now_millis() -> u128 {

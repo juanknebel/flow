@@ -695,6 +695,11 @@ mod tests {
             assignee: String::new(),
             project: String::new(),
             depends_on: Vec::new(),
+            version: 1,
+            created_at: 0,
+            updated_at: 0,
+            created_by: String::new(),
+            updated_by: String::new(),
         }
     }
 
@@ -867,6 +872,11 @@ mod tests {
             assignee: String::new(),
             project: String::new(),
             depends_on: Vec::new(),
+            version: 1,
+            created_at: 0,
+            updated_at: 0,
+            created_by: String::new(),
+            updated_by: String::new(),
         }
     }
 

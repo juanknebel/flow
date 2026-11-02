@@ -26,7 +26,14 @@ use flow_tui::{
     ui::render,
 };
 
+mod daemon;
+
 fn main() -> io::Result<()> {
+    let args: Vec<String> = std::env::args().collect();
+    if args.iter().any(|a| a == "daemon" || a == "serve") {
+        daemon::run();
+        return Ok(());
+    }
     enable_raw_mode()?;
     let mut stdout = io::stdout();
     execute!(stdout, EnterAlternateScreen)?;

@@ -82,7 +82,20 @@ pub struct Cli {
 #[derive(Subcommand)]
 pub enum Command {
     /// List all columns with their cards (id and title per card)
-    List,
+    List {
+        /// Filter cards by assignee (substring, case-insensitive)
+        #[arg(long)]
+        assignee: Option<String>,
+        /// Filter cards by priority (low, medium, high, bug, wishlist)
+        #[arg(long)]
+        priority: Option<String>,
+        /// Filter cards by title/description substring (case-insensitive)
+        #[arg(long)]
+        search: Option<String>,
+        /// Only show this column id
+        #[arg(long)]
+        column: Option<String>,
+    },
 
     /// Show full card details: id, title, description, and column
     Show {
@@ -185,12 +198,49 @@ pub fn run(cmd: Command, fmt: Format, project: Option<&str>) -> io::Result<()> {
     let mut prov = provider::from_env_with_project(Some(tenant.clone()));
 
     match cmd {
-        Command::List => {
+        Command::List {
+            assignee,
+            priority,
+            search,
+            column,
+        } => {
             let mut board = prov
                 .load_board()
                 .map_err(|e| io::Error::other(e.to_string()))?;
             if !tenant.eq_ignore_ascii_case("all") {
                 board.apply_project_filter(std::slice::from_ref(&tenant));
+            }
+            let prio = priority
+                .as_deref()
+                .map(flow_core::model::Priority::from_str);
+            for col in &mut board.columns {
+                if let Some(col_id) = &column
+                    && col.id != *col_id
+                {
+                    col.cards.clear();
+                    continue;
+                }
+                col.cards.retain(|card| {
+                    if let Some(a) = &assignee
+                        && !card.assignee.to_lowercase().contains(&a.to_lowercase())
+                    {
+                        return false;
+                    }
+                    if let Some(p) = &prio
+                        && card.priority != *p
+                    {
+                        return false;
+                    }
+                    if let Some(q) = &search {
+                        let ql = q.to_lowercase();
+                        if !card.title.to_lowercase().contains(&ql)
+                            && !card.description.to_lowercase().contains(&ql)
+                        {
+                            return false;
+                        }
+                    }
+                    true
+                });
             }
             println!(
                 "{}",

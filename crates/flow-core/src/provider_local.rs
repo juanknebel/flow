@@ -279,6 +279,7 @@ impl LocalProvider {
 fn map_err(op: &str, db_path: &Path, err: StoreError) -> ProviderError {
     match err {
         StoreError::NotFound(id) => ProviderError::NotFound { id },
+        StoreError::Conflict(msg) => ProviderError::Validation { msg },
         StoreError::Db(e) => ProviderError::Db {
             op: op.to_string(),
             msg: e.to_string(),
