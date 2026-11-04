@@ -5,6 +5,7 @@ use std::sync::Mutex;
 use std::thread;
 
 static DB_LOCK: Mutex<()> = Mutex::new(());
+static SUBSCRIBERS: Mutex<Vec<UnixStream>> = Mutex::new(Vec::new());
 
 use flow_core::provider;
 use serde::{Deserialize, Serialize};
@@ -71,9 +72,46 @@ fn handle_stream(stream: UnixStream) {
         }
     };
 
+    if req.method == "subscribe" {
+        let reader_stream = stream.try_clone().unwrap();
+        {
+            let mut subs = SUBSCRIBERS.lock().unwrap();
+            subs.push(stream.try_clone().unwrap());
+        }
+        let mut w = stream;
+        let _ = writeln!(
+            w,
+            "{}",
+            serde_json::to_string(&Response {
+                id: req.id,
+                ok: true,
+                result: Some(serde_json::json!({"subscribed": true})),
+                error: None,
+            })
+            .unwrap()
+        );
+        // Keep connection open until client disconnects.
+        let mut reader = BufReader::new(reader_stream);
+        let mut l = String::new();
+        while reader.read_line(&mut l).unwrap_or(0) > 0 {
+            l.clear();
+        }
+        return;
+    }
+
     let resp = dispatch(req.id, &req.method, req.params);
     let mut w = stream;
     let _ = writeln!(w, "{}", serde_json::to_string(&resp).unwrap());
+}
+
+fn broadcast_event(method: &str, params: &Value) {
+    let event = serde_json::json!({"event": method, "params": params});
+    let line = format!("{}\n", event);
+    let mut subs = SUBSCRIBERS.lock().unwrap();
+    subs.retain(|s| {
+        let mut w = s;
+        w.write_all(line.as_bytes()).is_ok() && w.flush().is_ok()
+    });
 }
 
 fn dispatch(id: u64, method: &str, params: Value) -> Response {
@@ -251,6 +289,19 @@ fn dispatch(id: u64, method: &str, params: Value) -> Response {
         }
     })();
 
+    let is_mutation = matches!(
+        method,
+        "create_card"
+            | "update_card"
+            | "move_card"
+            | "delete_card"
+            | "claim_card"
+            | "release_card"
+            | "delete_project"
+    );
+    if is_mutation && res.is_ok() {
+        broadcast_event(method, &params);
+    }
     match res {
         Ok(result) => Response {
             id,
