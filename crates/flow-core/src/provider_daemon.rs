@@ -235,6 +235,7 @@ impl Provider for DaemonProvider {
         assignee: &str,
         project: &str,
         depends_on: &[String],
+        _expected_version: Option<u64>,
     ) -> Result<(), ProviderError> {
         let params = serde_json::json!({
             "project": project,

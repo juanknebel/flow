@@ -593,9 +593,28 @@ pub fn update_card(
     priority: Priority,
     assignee: &str,
     depends_on: &[String],
+    expected_version: Option<u64>,
 ) -> Result<(), StoreError> {
     let mut conn = open_db(db_path)?;
     ensure_tenant(&conn, project)?;
+
+    if let Some(ev) = expected_version {
+        let current: Option<i64> = conn
+            .query_row(
+                "SELECT version FROM cards WHERE project_code = ?1 AND id = ?2",
+                params![project, card_id],
+                |r| r.get(0),
+            )
+            .optional()?;
+        if let Some(cv) = current
+            && cv as u64 != ev
+        {
+            return Err(StoreError::Conflict(format!(
+                "version mismatch: expected {ev}, found {cv}"
+            )));
+        }
+    }
+
     let tx = conn.transaction()?;
 
     let updated = tx.execute(
@@ -645,23 +664,6 @@ pub fn update_card_versioned(
     depends_on: &[String],
     expected_version: Option<u64>,
 ) -> Result<(), StoreError> {
-    if let Some(ev) = expected_version {
-        let conn = open_db(db_path)?;
-        let current: Option<i64> = conn
-            .query_row(
-                "SELECT version FROM cards WHERE project_code = ?1 AND id = ?2",
-                params![project, card_id],
-                |row| row.get(0),
-            )
-            .optional()?;
-        if let Some(cv) = current
-            && cv as u64 != ev
-        {
-            return Err(StoreError::Conflict(format!(
-                "version mismatch: expected {ev}, found {cv}"
-            )));
-        }
-    }
     update_card(
         db_path,
         project,
@@ -671,6 +673,7 @@ pub fn update_card_versioned(
         priority,
         assignee,
         depends_on,
+        expected_version,
     )
 }
 
@@ -683,7 +686,9 @@ pub fn reap_expired_leases(db_path: &Path, project: Option<&str>) -> Result<usiz
         Some(p) if !p.eq_ignore_ascii_case("all") => {
             "UPDATE cards SET claimed_by = '', claimed_until = 0 WHERE project_code = ?1 AND claimed_until > 0 AND claimed_until <= ?2"
         }
-        _ => "UPDATE cards SET claimed_by = '', claimed_until = 0 WHERE claimed_until > 0 AND claimed_until <= ?1",
+        _ => {
+            "UPDATE cards SET claimed_by = '', claimed_until = 0 WHERE claimed_until > 0 AND claimed_until <= ?1"
+        }
     };
     let n = if let Some(p) = project {
         if p.eq_ignore_ascii_case("all") {
@@ -766,6 +771,7 @@ mod tests {
             Priority::High,
             "user@test.com",
             &["DEP-1".to_string(), "DEP-2".to_string()],
+            None,
         )
         .map_err(|e| format!("{e:?}"))?;
 
@@ -833,7 +839,7 @@ mod tests {
     fn update_missing_card_is_not_found() {
         let db = tmp_db();
         assert!(matches!(
-            update_card(&db, "acme", "X-1", "t", "", Priority::Low, "", &[]),
+            update_card(&db, "acme", "X-1", "t", "", Priority::Low, "", &[], None),
             Err(StoreError::NotFound(_))
         ));
         cleanup(&db);
@@ -852,6 +858,7 @@ mod tests {
             Priority::Low,
             "",
             &["A".to_string()],
+            None,
         )
         .map_err(|e| format!("{e:?}"))?;
         update_card(
@@ -863,6 +870,7 @@ mod tests {
             Priority::Low,
             "",
             &["B".to_string()],
+            None,
         )
         .map_err(|e| format!("{e:?}"))?;
 
@@ -890,6 +898,7 @@ mod tests {
             Priority::Low,
             "",
             std::slice::from_ref(&a),
+            None,
         )
         .map_err(|e| format!("{e:?}"))?;
 
@@ -908,6 +917,7 @@ mod tests {
             Priority::Low,
             "",
             std::slice::from_ref(&a),
+            None,
         )
         .map_err(|e| format!("{e:?}"))?;
         delete_card(&db, "acme", &a).map_err(|e| format!("{e:?}"))?;
@@ -934,7 +944,8 @@ mod tests {
             Priority::Bug,
             Priority::Wishlist,
         ] {
-            update_card(&db, "acme", &id, "t", "", p, "", &[]).map_err(|e| format!("{e:?}"))?;
+            update_card(&db, "acme", &id, "t", "", p, "", &[], None)
+                .map_err(|e| format!("{e:?}"))?;
             let board = load_board(&db, "acme").map_err(|e| format!("{e:?}"))?;
             assert_eq!(
                 board.find_card(&id).unwrap().priority,
@@ -986,7 +997,7 @@ mod tests {
         assert!(list_projects(&db).map_err(|e| format!("{e:?}"))?.is_empty());
 
         let a1 = create_card(&db, "aaa", "todo").map_err(|e| format!("{e:?}"))?;
-        update_card(&db, "aaa", &a1, "A1", "", Priority::High, "", &[])
+        update_card(&db, "aaa", &a1, "A1", "", Priority::High, "", &[], None)
             .map_err(|e| format!("{e:?}"))?;
         let a2 = create_card(&db, "aaa", "todo").map_err(|e| format!("{e:?}"))?;
         update_card(
@@ -998,10 +1009,11 @@ mod tests {
             Priority::Low,
             "",
             std::slice::from_ref(&a1),
+            None,
         )
         .map_err(|e| format!("{e:?}"))?;
         let z1 = create_card(&db, "zzz", "done").map_err(|e| format!("{e:?}"))?;
-        update_card(&db, "zzz", &z1, "Z1", "", Priority::Medium, "", &[])
+        update_card(&db, "zzz", &z1, "Z1", "", Priority::Medium, "", &[], None)
             .map_err(|e| format!("{e:?}"))?;
 
         let board = load_board_all(&db).map_err(|e| format!("{e:?}"))?;
@@ -1042,6 +1054,7 @@ mod tests {
             Priority::Low,
             "",
             std::slice::from_ref(&a1),
+            None,
         )
         .map_err(|e| format!("{e:?}"))?;
         let z1 = create_card(&db, "zzz", "done").map_err(|e| format!("{e:?}"))?;

@@ -131,6 +131,7 @@ fn call_tool(name: &str, args: &Value) -> Result<Value, String> {
                     "",
                     project,
                     &[],
+                    None,
                 );
             }
             Ok(json!({"card_id": id}))

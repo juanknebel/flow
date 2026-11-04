@@ -127,6 +127,7 @@ pub trait Provider {
         _assignee: &str,
         _project: &str,
         _depends_on: &[String],
+        _expected_version: Option<u64>,
     ) -> Result<(), ProviderError> {
         Err(ProviderError::Parse {
             msg: "update_card not supported by current provider".to_string(),

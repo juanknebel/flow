@@ -329,7 +329,7 @@ pub fn run(cmd: Command, fmt: Format, project: Option<&str>) -> io::Result<()> {
                     .unwrap_or(Priority::Medium);
                 let a = assignee.as_deref().unwrap_or("");
                 let d = depends_on.unwrap_or_default();
-                prov.update_card(&card_id, t, b, p, a, &tenant, &d)
+                prov.update_card(&card_id, t, b, p, a, &tenant, &d, None)
                     .map_err(|e| io::Error::other(e.to_string()))?;
             }
 
@@ -377,7 +377,7 @@ pub fn run(cmd: Command, fmt: Format, project: Option<&str>) -> io::Result<()> {
                 .unwrap_or(cur.priority);
             let a = assignee.as_deref().unwrap_or(&cur.assignee);
             let d = depends_on.unwrap_or_else(|| cur.depends_on.clone());
-            prov.update_card(&card_id, t, b, p, a, &cur.project, &d)
+            prov.update_card(&card_id, t, b, p, a, &cur.project, &d, Some(cur.version))
                 .map_err(|e| io::Error::other(e.to_string()))?;
 
             println!(
@@ -590,6 +590,7 @@ pub fn run(cmd: Command, fmt: Format, project: Option<&str>) -> io::Result<()> {
                     &card.assignee,
                     &tenant,
                     &depends_on,
+                    None,
                 )
                 .map_err(|e| io::Error::other(e.to_string()))?;
             }

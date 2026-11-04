@@ -176,6 +176,7 @@ fn dispatch(id: u64, method: &str, params: Value) -> Response {
                     Some(project.clone())
                 };
                 let mut p = provider::from_env_with_project(project_opt);
+                let expected = params.get("expected_version").and_then(Value::as_u64);
                 p.update_card(
                     &card_id,
                     &title,
@@ -184,6 +185,7 @@ fn dispatch(id: u64, method: &str, params: Value) -> Response {
                     &assignee,
                     &project,
                     &depends_on,
+                    expected,
                 )
                 .map_err(|e| e.to_string())?;
                 Ok(Value::Null)

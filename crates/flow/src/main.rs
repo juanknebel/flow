@@ -408,6 +408,7 @@ fn run_tui(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> io::Result<
                                         &assignee,
                                         tenant,
                                         &depends_on,
+                                        None,
                                     ) {
                                         app.banner = Some(format!("Save failed: {e}"));
                                     } else {
@@ -439,6 +440,7 @@ fn run_tui(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> io::Result<
                                 &assignee,
                                 tenant,
                                 &depends_on,
+                                Some(edit.version),
                             ) {
                                 app.banner = Some(format!("Save failed: {e}"));
                             } else {
@@ -702,6 +704,7 @@ fn run_tui(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> io::Result<
                             priority: Priority::Medium,
                             assignee: String::new(),
                             depends_on: String::new(),
+                            version: 0,
                             cursor_pos: 8,
                             focus: EditFocus::Title,
                         });
@@ -795,6 +798,7 @@ fn run_tui(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> io::Result<
                             priority: card.priority,
                             assignee: card.assignee.clone(),
                             depends_on: format_depends_on_field(&card.depends_on),
+                            version: card.version,
                             cursor_pos: card.title.len(),
                             focus: EditFocus::Title,
                         });
@@ -883,6 +887,7 @@ fn restore_card(
         &card.assignee,
         &card.project,
         &card.depends_on,
+        None,
     )?;
     Ok(new_id)
 }

@@ -52,6 +52,7 @@ pub struct EditState {
     pub priority: Priority,
     pub assignee: String,
     pub depends_on: String,
+    pub version: u64,
     pub cursor_pos: usize,
     pub focus: EditFocus,
 }

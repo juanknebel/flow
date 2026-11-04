@@ -210,6 +210,7 @@ impl Provider for LocalProvider {
         assignee: &str,
         _project: &str,
         depends_on: &[String],
+        expected_version: Option<u64>,
     ) -> Result<(), ProviderError> {
         if is_all(&self.project) {
             return Err(read_only());
@@ -224,6 +225,7 @@ impl Provider for LocalProvider {
             priority,
             assignee,
             &deps,
+            expected_version,
         )
         .map_err(|e| map_err("update_card", &self.db_path, e))
     }
@@ -430,6 +432,7 @@ mod tests {
                 "",
                 "p",
                 &["DOES-NOT-EXIST".to_string()],
+                None,
             )
             .unwrap_err();
 
@@ -459,6 +462,7 @@ mod tests {
                 "",
                 "p",
                 std::slice::from_ref(&id),
+                None,
             )
             .unwrap_err();
 
@@ -487,6 +491,7 @@ mod tests {
                 "",
                 "p",
                 std::slice::from_ref(&a),
+                None,
             )
             .map_err(|e| e.to_string())?;
 
@@ -499,6 +504,7 @@ mod tests {
                 "",
                 "p",
                 std::slice::from_ref(&b),
+                None,
             )
             .unwrap_err();
 
@@ -532,6 +538,7 @@ mod tests {
                 "",
                 "p",
                 std::slice::from_ref(&a),
+                None,
             )
             .map_err(|e| e.to_string())?;
 
@@ -642,7 +649,7 @@ mod tests {
         for res in [
             all.move_card(&id_a, "done").map(|_| ()),
             all.create_card("todo", "all").map(|_| ()),
-            all.update_card(&id_a, "t", "", Priority::Low, "", "all", &[]),
+            all.update_card(&id_a, "t", "", Priority::Low, "", "all", &[], None),
             all.delete_card(&id_a),
         ] {
             assert!(matches!(res.unwrap_err(), ProviderError::Validation { .. }));

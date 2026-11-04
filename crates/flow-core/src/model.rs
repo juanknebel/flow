@@ -229,7 +229,11 @@ impl Board {
             .filter(|c| c.id.to_lowercase().contains("done"))
             .flat_map(|c| c.cards.iter().map(|x| x.id.as_str()))
             .collect();
-        if card.depends_on.iter().any(|d| !done_ids.contains(d.as_str())) {
+        if card
+            .depends_on
+            .iter()
+            .any(|d| !done_ids.contains(d.as_str()))
+        {
             return CardState::Blocked;
         }
         if self
