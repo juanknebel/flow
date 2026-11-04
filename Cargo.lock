@@ -582,6 +582,7 @@ version = "0.9.0-nightly"
 dependencies = [
  "clap",
  "flow-core",
+ "serde_json",
 ]
 
 [[package]]

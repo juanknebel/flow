@@ -187,6 +187,9 @@ pub enum Command {
         agent: String,
     },
 
+    /// Show a swarm-oriented dashboard for the project
+    Dashboard,
+
     /// List column ids, titles, and card counts
     Columns,
 
@@ -456,6 +459,84 @@ pub fn run(cmd: Command, fmt: Format, project: Option<&str>) -> io::Result<()> {
                 )
                 .map_err(io::Error::other)?
             );
+        }
+        Command::Dashboard => {
+            let board = prov
+                .load_board()
+                .map_err(|e| io::Error::other(e.to_string()))?;
+            if !tenant.eq_ignore_ascii_case("all") {
+                // still show all columns; no project filter needed for dashboard
+            }
+
+            // Determine which card ids are "done" (in a column whose id contains "done").
+            let done_ids: std::collections::HashSet<String> = board
+                .columns
+                .iter()
+                .filter(|c| c.id.to_lowercase().contains("done"))
+                .flat_map(|c| c.cards.iter().map(|card| card.id.clone()))
+                .collect();
+
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis() as i64;
+
+            let mut total = 0usize;
+            let mut by_column: Vec<(String, usize)> = Vec::new();
+            let mut claimed: Vec<(String, String, i64)> = Vec::new();
+            let mut blocked: Vec<String> = Vec::new();
+            let mut free = 0usize;
+
+            for col in &board.columns {
+                by_column.push((col.id.clone(), col.cards.len()));
+                for card in &col.cards {
+                    total += 1;
+                    if !card.claimed_by.is_empty() && card.claimed_until > now {
+                        claimed.push((
+                            card.id.clone(),
+                            card.claimed_by.clone(),
+                            card.claimed_until,
+                        ));
+                    } else {
+                        free += 1;
+                    }
+                    let is_blocked = card.depends_on.iter().any(|d| !done_ids.contains(d));
+                    if is_blocked {
+                        blocked.push(card.id.clone());
+                    }
+                }
+            }
+
+            if matches!(fmt, flow_core::format::Format::Json) {
+                let payload = serde_json::json!({
+                    "project": tenant,
+                    "total_cards": total,
+                    "by_column": by_column.iter().map(|(k,v)| serde_json::json!({"column":k,"count":v})).collect::<Vec<_>>(),
+                    "claimed": claimed.iter().map(|(id,agent,until)| serde_json::json!({"card_id":id,"agent":agent,"lease_until":until})).collect::<Vec<_>>(),
+                    "blocked": blocked,
+                    "free_cards": free,
+                });
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&payload).map_err(io::Error::other)?
+                );
+            } else {
+                println!("Swarm dashboard: {tenant}");
+                println!("Total cards: {total}");
+                println!("Free cards: {free}");
+                println!("Claimed cards: {}", claimed.len());
+                for (id, agent, until) in &claimed {
+                    println!("  {id} -> {agent} (lease until {until})");
+                }
+                println!("Blocked cards: {}", blocked.len());
+                for id in &blocked {
+                    println!("  {id}");
+                }
+                println!("By column:");
+                for (col, n) in &by_column {
+                    println!("  {col}: {n}");
+                }
+            }
         }
         Command::Columns => {
             let board = prov
