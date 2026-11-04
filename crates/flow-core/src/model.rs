@@ -96,6 +96,27 @@ impl Priority {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum CardState {
+    Free,
+    Claimed,
+    Blocked,
+    Review,
+    Done,
+}
+
+impl CardState {
+    pub fn label(&self) -> &'static str {
+        match self {
+            CardState::Free => "FREE",
+            CardState::Claimed => "CLAIMED",
+            CardState::Blocked => "BLOCKED",
+            CardState::Review => "REVIEW",
+            CardState::Done => "DONE",
+        }
+    }
+}
+
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub struct Card {
     pub id: String,
@@ -190,6 +211,46 @@ impl Board {
                 }
             });
         }
+    }
+
+    /// Formal swarm state of a card, derived from its lease, dependencies
+    /// and current column.
+    pub fn state_of(&self, card: &Card) -> CardState {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() as i64;
+        if !card.claimed_by.is_empty() && card.claimed_until > now {
+            return CardState::Claimed;
+        }
+        let done_ids: std::collections::HashSet<&str> = self
+            .columns
+            .iter()
+            .filter(|c| c.id.to_lowercase().contains("done"))
+            .flat_map(|c| c.cards.iter().map(|x| x.id.as_str()))
+            .collect();
+        if card.depends_on.iter().any(|d| !done_ids.contains(d.as_str())) {
+            return CardState::Blocked;
+        }
+        if self
+            .columns
+            .iter()
+            .find(|c| c.cards.iter().any(|x| x.id == card.id))
+            .map(|c| c.id.to_lowercase().contains("review"))
+            .unwrap_or(false)
+        {
+            return CardState::Review;
+        }
+        if self
+            .columns
+            .iter()
+            .find(|c| c.cards.iter().any(|x| x.id == card.id))
+            .map(|c| c.id.to_lowercase().contains("done"))
+            .unwrap_or(false)
+        {
+            return CardState::Done;
+        }
+        CardState::Free
     }
 
     /// Find a card by id anywhere on the board.

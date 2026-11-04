@@ -213,6 +213,7 @@ pub fn list_projects(db_path: &Path) -> Result<Vec<String>, StoreError> {
 pub fn load_board(db_path: &Path, project: &str) -> Result<Board, StoreError> {
     let conn = open_db(db_path)?;
     ensure_tenant(&conn, project)?;
+    let _ = reap_expired_leases(db_path, Some(project));
 
     let mut cols = Vec::new();
     let mut stmt =
@@ -671,6 +672,29 @@ pub fn update_card_versioned(
         assignee,
         depends_on,
     )
+}
+
+/// Clears leases whose expiry has passed. Called automatically on load so a
+/// crashed agent's lease does not block the board forever.
+pub fn reap_expired_leases(db_path: &Path, project: Option<&str>) -> Result<usize, StoreError> {
+    let conn = open_db(db_path)?;
+    let now = now_millis() as i64;
+    let sql = match project {
+        Some(p) if !p.eq_ignore_ascii_case("all") => {
+            "UPDATE cards SET claimed_by = '', claimed_until = 0 WHERE project_code = ?1 AND claimed_until > 0 AND claimed_until <= ?2"
+        }
+        _ => "UPDATE cards SET claimed_by = '', claimed_until = 0 WHERE claimed_until > 0 AND claimed_until <= ?1",
+    };
+    let n = if let Some(p) = project {
+        if p.eq_ignore_ascii_case("all") {
+            conn.execute(sql, params![now])?
+        } else {
+            conn.execute(sql, params![p, now])?
+        }
+    } else {
+        conn.execute(sql, params![now])?
+    };
+    Ok(n)
 }
 
 fn now_millis() -> u128 {
