@@ -130,6 +130,8 @@ fn ensure_schema(conn: &Connection) -> Result<(), StoreError> {
             updated_at   INTEGER NOT NULL DEFAULT 0,
             created_by   TEXT NOT NULL DEFAULT '',
             updated_by   TEXT NOT NULL DEFAULT '',
+            claimed_by   TEXT NOT NULL DEFAULT '',
+            claimed_until INTEGER NOT NULL DEFAULT 0,
             PRIMARY KEY (project_code, id),
             FOREIGN KEY (project_code, column_id) REFERENCES columns(project_code, id)
         );
@@ -158,6 +160,8 @@ fn migrate_schema(conn: &Connection) -> Result<(), StoreError> {
         ("updated_at", "INTEGER NOT NULL DEFAULT 0"),
         ("created_by", "TEXT NOT NULL DEFAULT ''"),
         ("updated_by", "TEXT NOT NULL DEFAULT ''"),
+        ("claimed_by", "TEXT NOT NULL DEFAULT ''"),
+        ("claimed_until", "INTEGER NOT NULL DEFAULT 0"),
     ];
     for (name, decl) in additions {
         if !existing.contains(name) {
@@ -231,7 +235,7 @@ pub fn load_board(db_path: &Path, project: &str) -> Result<Board, StoreError> {
 #[allow(clippy::type_complexity)]
 fn load_cards(conn: &Connection, project: &str, col_id: &str) -> Result<Vec<Card>, StoreError> {
     let mut stmt = conn.prepare(
-        "SELECT id, title, description, priority, assignee, version, created_at, updated_at, created_by, updated_by
+        "SELECT id, title, description, priority, assignee, version, created_at, updated_at, created_by, updated_by, claimed_by, claimed_until
          FROM cards WHERE project_code = ?1 AND column_id = ?2 ORDER BY position",
     )?;
     let rows: Vec<(
@@ -245,6 +249,8 @@ fn load_cards(conn: &Connection, project: &str, col_id: &str) -> Result<Vec<Card
         i64,
         String,
         String,
+        String,
+        i64,
     )> = stmt
         .query_map(params![project, col_id], |row| {
             Ok((
@@ -258,6 +264,8 @@ fn load_cards(conn: &Connection, project: &str, col_id: &str) -> Result<Vec<Card
                 row.get(7)?,
                 row.get(8)?,
                 row.get(9)?,
+                row.get(10)?,
+                row.get(11)?,
             ))
         })?
         .collect::<Result<_, _>>()?;
@@ -275,6 +283,8 @@ fn load_cards(conn: &Connection, project: &str, col_id: &str) -> Result<Vec<Card
         updated_at,
         created_by,
         updated_by,
+        claimed_by,
+        claimed_until,
     ) in rows
     {
         let depends_on = load_deps(conn, project, &id)?;
@@ -291,6 +301,8 @@ fn load_cards(conn: &Connection, project: &str, col_id: &str) -> Result<Vec<Card
             updated_at,
             created_by,
             updated_by,
+            claimed_by,
+            claimed_until,
         });
     }
     Ok(cards)
@@ -323,7 +335,7 @@ pub fn load_board_all(db_path: &Path) -> Result<Board, StoreError> {
 #[allow(clippy::type_complexity)]
 fn load_cards_all(conn: &Connection, col_id: &str) -> Result<Vec<Card>, StoreError> {
     let mut stmt = conn.prepare(
-        "SELECT project_code, id, title, description, priority, assignee, version, created_at, updated_at, created_by, updated_by
+        "SELECT project_code, id, title, description, priority, assignee, version, created_at, updated_at, created_by, updated_by, claimed_by, claimed_until
          FROM cards WHERE column_id = ?1 ORDER BY project_code, position",
     )?;
     let rows: Vec<(
@@ -338,6 +350,8 @@ fn load_cards_all(conn: &Connection, col_id: &str) -> Result<Vec<Card>, StoreErr
         i64,
         String,
         String,
+        String,
+        i64,
     )> = stmt
         .query_map(params![col_id], |row| {
             Ok((
@@ -352,6 +366,8 @@ fn load_cards_all(conn: &Connection, col_id: &str) -> Result<Vec<Card>, StoreErr
                 row.get(8)?,
                 row.get(9)?,
                 row.get(10)?,
+                row.get(11)?,
+                row.get(12)?,
             ))
         })?
         .collect::<Result<_, _>>()?;
@@ -370,6 +386,8 @@ fn load_cards_all(conn: &Connection, col_id: &str) -> Result<Vec<Card>, StoreErr
         updated_at,
         created_by,
         updated_by,
+        claimed_by,
+        claimed_until,
     ) in rows
     {
         let depends_on = load_deps(conn, &project, &id)?;
@@ -386,6 +404,8 @@ fn load_cards_all(conn: &Connection, col_id: &str) -> Result<Vec<Card>, StoreErr
             updated_at,
             created_by,
             updated_by,
+            claimed_by,
+            claimed_until,
         });
     }
     Ok(cards)
@@ -1071,4 +1091,77 @@ mod tests {
         cleanup(&db);
         Ok(())
     }
+}
+
+#[allow(clippy::items_after_test_module)]
+/// Acquire a time-boxed lease on a card. Returns an error if another agent
+/// holds a non-expired lease.
+pub fn claim_card(
+    db_path: &Path,
+    project: &str,
+    card_id: &str,
+    agent: &str,
+    lease_ms: u64,
+) -> Result<(), StoreError> {
+    let conn = open_db(db_path)?;
+    ensure_tenant(&conn, project)?;
+    let now = now_millis() as i64;
+    let row: Option<(String, i64)> = conn
+        .query_row(
+            "SELECT claimed_by, claimed_until FROM cards WHERE project_code = ?1 AND id = ?2",
+            params![project, card_id],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .optional()?;
+    let Some((holder, until)) = row else {
+        return Err(StoreError::NotFound(card_id.to_string()));
+    };
+    if !holder.is_empty() && holder != agent && until > now {
+        return Err(StoreError::Conflict(format!(
+            "card {card_id} is leased by {holder} until {until}"
+        )));
+    }
+    let updated = conn.execute(
+        "UPDATE cards SET claimed_by = ?1, claimed_until = ?2, version = version + 1, updated_at = ?3, updated_by = ?4
+         WHERE project_code = ?5 AND id = ?6",
+        params![agent, now + lease_ms as i64, now, agent, project, card_id],
+    )?;
+    if updated == 0 {
+        return Err(StoreError::NotFound(card_id.to_string()));
+    }
+    Ok(())
+}
+
+#[allow(clippy::items_after_test_module)]
+/// Release a lease. Only the current holder may release (or anyone if free).
+pub fn release_card(
+    db_path: &Path,
+    project: &str,
+    card_id: &str,
+    agent: &str,
+) -> Result<(), StoreError> {
+    let conn = open_db(db_path)?;
+    ensure_tenant(&conn, project)?;
+    let row: Option<String> = conn
+        .query_row(
+            "SELECT claimed_by FROM cards WHERE project_code = ?1 AND id = ?2",
+            params![project, card_id],
+            |r| r.get(0),
+        )
+        .optional()?;
+    let Some(holder) = row else {
+        return Err(StoreError::NotFound(card_id.to_string()));
+    };
+    if !holder.is_empty() && holder != agent {
+        return Err(StoreError::Conflict(format!(
+            "card {card_id} is leased by {holder}, not {agent}"
+        )));
+    }
+    let now = now_millis() as i64;
+    conn.execute(
+        "UPDATE cards SET claimed_by = '', claimed_until = 0, version = version + 1, updated_at = ?1
+         WHERE project_code = ?2 AND id = ?3",
+        params![now, project, card_id],
+    )?;
+    Ok(())
 }

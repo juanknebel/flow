@@ -192,6 +192,38 @@ fn dispatch(id: u64, method: &str, params: Value) -> Response {
                 let n = p.delete_project(&project).map_err(|e| e.to_string())?;
                 Ok(serde_json::json!(n))
             }
+            "claim_card" => {
+                let project = str_param(&params, "project");
+                let card_id = str_param(&params, "card_id");
+                let agent = str_param(&params, "agent");
+                let lease_ms = params
+                    .get("lease_ms")
+                    .and_then(Value::as_u64)
+                    .unwrap_or(300000);
+                let project_opt = if project.is_empty() {
+                    None
+                } else {
+                    Some(project)
+                };
+                let mut p = provider::from_env_with_project(project_opt);
+                p.claim_card(&card_id, &agent, lease_ms)
+                    .map_err(|e| e.to_string())?;
+                Ok(Value::Null)
+            }
+            "release_card" => {
+                let project = str_param(&params, "project");
+                let card_id = str_param(&params, "card_id");
+                let agent = str_param(&params, "agent");
+                let project_opt = if project.is_empty() {
+                    None
+                } else {
+                    Some(project)
+                };
+                let mut p = provider::from_env_with_project(project_opt);
+                p.release_card(&card_id, &agent)
+                    .map_err(|e| e.to_string())?;
+                Ok(Value::Null)
+            }
             "changes_since" => {
                 let project = str_param(&params, "project");
                 let since = params.get("since").and_then(Value::as_i64).unwrap_or(0);

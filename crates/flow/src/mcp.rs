@@ -60,7 +60,9 @@ fn handle(req: RpcRequest) {
                         {"name":"create_card","description":"Create a card","inputSchema":{"type":"object","properties":{"project":{"type":"string"},"column_id":{"type":"string"},"title":{"type":"string"}},"required":["project","column_id"]}},
                         {"name":"move_card","description":"Move a card","inputSchema":{"type":"object","properties":{"project":{"type":"string"},"card_id":{"type":"string"},"column_id":{"type":"string"}},"required":["project","card_id","column_id"]}},
                         {"name":"delete_card","description":"Delete a card","inputSchema":{"type":"object","properties":{"project":{"type":"string"},"card_id":{"type":"string"}},"required":["project","card_id"]}},
-                        {"name":"changes_since","description":"Cards changed after timestamp (millis)","inputSchema":{"type":"object","properties":{"project":{"type":"string"},"since":{"type":"integer"}},"required":["project"]}}
+                        {"name":"changes_since","description":"Cards changed after timestamp (millis)","inputSchema":{"type":"object","properties":{"project":{"type":"string"},"since":{"type":"integer"}},"required":["project"]}},
+                        {"name":"claim_card","description":"Acquire a lease on a card","inputSchema":{"type":"object","properties":{"project":{"type":"string"},"card_id":{"type":"string"},"agent":{"type":"string"},"lease_ms":{"type":"integer"}},"required":["project","card_id","agent"]}},
+                        {"name":"release_card","description":"Release a lease on a card","inputSchema":{"type":"object","properties":{"project":{"type":"string"},"card_id":{"type":"string"},"agent":{"type":"string"}},"required":["project","card_id","agent"]}}
                     ]
                 }
             }));
@@ -162,6 +164,27 @@ fn call_tool(name: &str, args: &Value) -> Result<Value, String> {
                 }
             }
             Ok(json!(out))
+        }
+        "claim_card" => {
+            let project = args.get("project").and_then(Value::as_str).unwrap_or("");
+            let card_id = args.get("card_id").and_then(Value::as_str).unwrap_or("");
+            let agent = args.get("agent").and_then(Value::as_str).unwrap_or("");
+            let lease_ms = args
+                .get("lease_ms")
+                .and_then(Value::as_u64)
+                .unwrap_or(300000);
+            let mut p = provider_for(project);
+            p.claim_card(card_id, agent, lease_ms)
+                .map_err(|e| e.to_string())?;
+            Ok(json!({"ok": true}))
+        }
+        "release_card" => {
+            let project = args.get("project").and_then(Value::as_str).unwrap_or("");
+            let card_id = args.get("card_id").and_then(Value::as_str).unwrap_or("");
+            let agent = args.get("agent").and_then(Value::as_str).unwrap_or("");
+            let mut p = provider_for(project);
+            p.release_card(card_id, agent).map_err(|e| e.to_string())?;
+            Ok(json!({"ok": true}))
         }
         _ => Err(format!("unknown tool: {name}")),
     }

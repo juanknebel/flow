@@ -171,6 +171,22 @@ pub enum Command {
         confirm: Option<String>,
     },
 
+    /// Acquire a lease on a card for an agent
+    Claim {
+        card_id: String,
+        #[arg(long)]
+        agent: String,
+        #[arg(long, default_value_t = 300000)]
+        lease_ms: u64,
+    },
+
+    /// Release a lease on a card
+    Release {
+        card_id: String,
+        #[arg(long)]
+        agent: String,
+    },
+
     /// List column ids, titles, and card counts
     Columns,
 
@@ -399,6 +415,42 @@ pub fn run(cmd: Command, fmt: Format, project: Option<&str>) -> io::Result<()> {
                         ("action", "delete-project"),
                         ("project", &tenant),
                         ("cards_deleted", &deleted_str)
+                    ],
+                    fmt,
+                )
+                .map_err(io::Error::other)?
+            );
+        }
+        Command::Claim {
+            card_id,
+            agent,
+            lease_ms,
+        } => {
+            prov.claim_card(&card_id, &agent, lease_ms)
+                .map_err(|e| io::Error::other(e.to_string()))?;
+            println!(
+                "{}",
+                format::format_result(
+                    &[
+                        ("action", "claim"),
+                        ("card_id", &card_id),
+                        ("agent", &agent)
+                    ],
+                    fmt,
+                )
+                .map_err(io::Error::other)?
+            );
+        }
+        Command::Release { card_id, agent } => {
+            prov.release_card(&card_id, &agent)
+                .map_err(|e| io::Error::other(e.to_string()))?;
+            println!(
+                "{}",
+                format::format_result(
+                    &[
+                        ("action", "release"),
+                        ("card_id", &card_id),
+                        ("agent", &agent)
                     ],
                     fmt,
                 )

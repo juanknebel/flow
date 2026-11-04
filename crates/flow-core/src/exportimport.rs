@@ -82,6 +82,8 @@ mod tests {
                     updated_at: 0,
                     created_by: String::new(),
                     updated_by: String::new(),
+                    claimed_by: String::new(),
+                    claimed_until: 0,
                 }],
             }],
         }

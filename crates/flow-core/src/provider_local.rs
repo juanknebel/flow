@@ -227,6 +227,27 @@ impl Provider for LocalProvider {
         )
         .map_err(|e| map_err("update_card", &self.db_path, e))
     }
+
+    fn claim_card(
+        &mut self,
+        card_id: &str,
+        agent: &str,
+        lease_ms: u64,
+    ) -> Result<(), ProviderError> {
+        if is_all(&self.project) {
+            return Err(read_only());
+        }
+        store_db::claim_card(&self.db_path, &self.project, card_id, agent, lease_ms)
+            .map_err(|e| map_err("claim_card", &self.db_path, e))
+    }
+
+    fn release_card(&mut self, card_id: &str, agent: &str) -> Result<(), ProviderError> {
+        if is_all(&self.project) {
+            return Err(read_only());
+        }
+        store_db::release_card(&self.db_path, &self.project, card_id, agent)
+            .map_err(|e| map_err("release_card", &self.db_path, e))
+    }
 }
 
 impl LocalProvider {

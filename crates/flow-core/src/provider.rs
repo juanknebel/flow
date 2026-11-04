@@ -132,6 +132,23 @@ pub trait Provider {
             msg: "update_card not supported by current provider".to_string(),
         })
     }
+
+    fn claim_card(
+        &mut self,
+        _card_id: &str,
+        _agent: &str,
+        _lease_ms: u64,
+    ) -> Result<(), ProviderError> {
+        Err(ProviderError::Parse {
+            msg: "claim_card not supported by current provider".to_string(),
+        })
+    }
+
+    fn release_card(&mut self, _card_id: &str, _agent: &str) -> Result<(), ProviderError> {
+        Err(ProviderError::Parse {
+            msg: "release_card not supported by current provider".to_string(),
+        })
+    }
 }
 
 pub fn from_env() -> Box<dyn Provider> {

@@ -117,6 +117,10 @@ pub struct Card {
     pub created_by: String,
     /// Actor of the last mutation (empty for legacy rows).
     pub updated_by: String,
+    /// Agent/human that currently holds a lease on this card (empty = free).
+    pub claimed_by: String,
+    /// Lease expiry (unix millis); 0 = no active lease.
+    pub claimed_until: i64,
 }
 
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
@@ -274,6 +278,8 @@ mod tests {
             updated_at: 0,
             created_by: String::new(),
             updated_by: String::new(),
+            claimed_by: String::new(),
+            claimed_until: 0,
         }
     }
 
