@@ -1117,6 +1117,37 @@ mod tests {
     }
 
     #[test]
+    fn concurrent_creates_are_safe() -> TestResult {
+        use std::sync::Arc;
+        use std::thread;
+        let db = Arc::new(tmp_db());
+        let mut handles = Vec::new();
+        for _ in 0..8 {
+            let db = Arc::clone(&db);
+            handles.push(thread::spawn(move || {
+                let mut ids = Vec::new();
+                for _ in 0..10 {
+                    let id = create_card(&db, "acme", "todo").expect("create");
+                    ids.push(id);
+                }
+                ids
+            }));
+        }
+        let mut all = Vec::new();
+        for h in handles {
+            all.extend(h.join().expect("thread"));
+        }
+        assert_eq!(all.len(), 80);
+        let unique: std::collections::HashSet<_> = all.iter().collect();
+        assert_eq!(unique.len(), 80, "duplicate ids under concurrency");
+        let board = load_board(&db, "acme").map_err(|e| format!("{e:?}"))?;
+        let total: usize = board.columns.iter().map(|c| c.cards.len()).sum();
+        assert_eq!(total, 80);
+        cleanup(&db);
+        Ok(())
+    }
+
+    #[test]
     fn rapid_creates_get_unique_ids() -> TestResult {
         let db = tmp_db();
         let mut ids = std::collections::HashSet::new();
