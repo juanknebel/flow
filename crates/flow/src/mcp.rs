@@ -57,10 +57,12 @@ fn handle(req: RpcRequest) {
                     "tools": [
                         {"name":"list_projects","description":"List tenant project codes","inputSchema":{"type":"object","properties":{}}},
                         {"name":"load_board","description":"Load a board","inputSchema":{"type":"object","properties":{"project":{"type":"string"}},"required":["project"]}},
+                        {"name":"edit_card","description":"Edit a card","inputSchema":{"type":"object","properties":{"project":{"type":"string"},"card_id":{"type":"string"},"title":{"type":"string"},"body":{"type":"string"},"priority":{"type":"string"},"assignee":{"type":"string"},"depends_on":{"type":"string"}},"required":["project","card_id"]}},
                         {"name":"create_card","description":"Create a card","inputSchema":{"type":"object","properties":{"project":{"type":"string"},"column_id":{"type":"string"},"title":{"type":"string"}},"required":["project","column_id"]}},
                         {"name":"move_card","description":"Move a card","inputSchema":{"type":"object","properties":{"project":{"type":"string"},"card_id":{"type":"string"},"column_id":{"type":"string"}},"required":["project","card_id","column_id"]}},
                         {"name":"delete_card","description":"Delete a card","inputSchema":{"type":"object","properties":{"project":{"type":"string"},"card_id":{"type":"string"}},"required":["project","card_id"]}},
                         {"name":"changes_since","description":"Cards changed after timestamp (millis)","inputSchema":{"type":"object","properties":{"project":{"type":"string"},"since":{"type":"integer"}},"required":["project"]}},
+                        {"name":"health","description":"Daemon health check","inputSchema":{"type":"object","properties":{}}},
                         {"name":"claim_card","description":"Acquire a lease on a card","inputSchema":{"type":"object","properties":{"project":{"type":"string"},"card_id":{"type":"string"},"agent":{"type":"string"},"lease_ms":{"type":"integer"}},"required":["project","card_id","agent"]}},
                         {"name":"release_card","description":"Release a lease on a card","inputSchema":{"type":"object","properties":{"project":{"type":"string"},"card_id":{"type":"string"},"agent":{"type":"string"}},"required":["project","card_id","agent"]}}
                     ]
@@ -185,6 +187,63 @@ fn call_tool(name: &str, args: &Value) -> Result<Value, String> {
             let agent = args.get("agent").and_then(Value::as_str).unwrap_or("");
             let mut p = provider_for(project);
             p.release_card(card_id, agent).map_err(|e| e.to_string())?;
+            Ok(json!({"ok": true}))
+        }
+        "health" => Ok(json!({"status":"ok"})),
+        "edit_card" => {
+            let project = args.get("project").and_then(Value::as_str).unwrap_or("");
+            let card_id = args.get("card_id").and_then(Value::as_str).unwrap_or("");
+            let mut p = provider_for(project);
+            let board = p.load_board().map_err(|e| e.to_string())?;
+            let card = board
+                .columns
+                .iter()
+                .flat_map(|c| c.cards.iter())
+                .find(|c| c.id == card_id)
+                .ok_or_else(|| format!("card not found: {card_id}"))?
+                .clone();
+            let title = args
+                .get("title")
+                .and_then(Value::as_str)
+                .unwrap_or(&card.title)
+                .to_string();
+            let body = args
+                .get("body")
+                .and_then(Value::as_str)
+                .unwrap_or(&card.description)
+                .to_string();
+            let priority = args
+                .get("priority")
+                .and_then(Value::as_str)
+                .map(flow_core::Priority::from_str)
+                .unwrap_or(card.priority);
+            let assignee = args
+                .get("assignee")
+                .and_then(Value::as_str)
+                .unwrap_or(&card.assignee)
+                .to_string();
+            let depends_on: Vec<String> = args
+                .get("depends_on")
+                .and_then(Value::as_str)
+                .map(|s| {
+                    s.split(',')
+                        .map(str::trim)
+                        .filter(|x| !x.is_empty())
+                        .map(String::from)
+                        .collect()
+                })
+                .unwrap_or(card.depends_on.clone());
+            p.update_card(
+                &card_id,
+                &title,
+                &body,
+                priority,
+                &assignee,
+                project,
+                &depends_on,
+                Some(card.version),
+            )
+            .map_err(|e| e.to_string())?;
             Ok(json!({"ok": true}))
         }
         _ => Err(format!("unknown tool: {name}")),

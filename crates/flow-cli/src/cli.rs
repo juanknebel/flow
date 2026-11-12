@@ -95,6 +95,12 @@ pub enum Command {
         /// Only show this column id
         #[arg(long)]
         column: Option<String>,
+        /// Max cards per column
+        #[arg(long)]
+        limit: Option<usize>,
+        /// Skip first N cards per column
+        #[arg(long)]
+        offset: Option<usize>,
     },
 
     /// Show full card details: id, title, description, and column
@@ -233,6 +239,8 @@ pub fn run(cmd: Command, fmt: Format, project: Option<&str>) -> io::Result<()> {
             priority,
             search,
             column,
+            limit,
+            offset,
         } => {
             let mut board = prov
                 .load_board()
@@ -271,6 +279,19 @@ pub fn run(cmd: Command, fmt: Format, project: Option<&str>) -> io::Result<()> {
                     }
                     true
                 });
+            }
+            let offset = offset.unwrap_or(0);
+            if let Some(limit) = limit {
+                for col in &mut board.columns {
+                    let start = offset.min(col.cards.len());
+                    let end = (start + limit).min(col.cards.len());
+                    col.cards = col.cards[start..end].to_vec();
+                }
+            } else if offset > 0 {
+                for col in &mut board.columns {
+                    let start = offset.min(col.cards.len());
+                    col.cards = col.cards[start..].to_vec();
+                }
             }
             println!(
                 "{}",

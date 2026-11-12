@@ -119,6 +119,7 @@ fn dispatch(id: u64, method: &str, params: Value) -> Response {
     let res = (|| -> Result<Value, String> {
         match method {
             "ping" => Ok(Value::String("pong".to_string())),
+            "health" => Ok(serde_json::json!({"status":"ok","socket": socket_path()})),
             "list_projects" => {
                 let mut p = provider::from_env();
                 let projects = p.list_projects().map_err(|e| e.to_string())?;
