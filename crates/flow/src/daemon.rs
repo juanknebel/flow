@@ -29,6 +29,32 @@ struct Response {
     error: Option<String>,
 }
 
+fn token_path() -> PathBuf {
+    let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
+    PathBuf::from(home).join(".config/flow/daemon.token")
+}
+
+fn ensure_token() -> String {
+    let path = token_path();
+    if let Ok(t) = std::fs::read_to_string(&path) {
+        let t = t.trim().to_string();
+        if !t.is_empty() {
+            return t;
+        }
+    }
+    let t = uuid::Uuid::new_v4().to_string();
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    let _ = std::fs::write(&path, &t);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600));
+    }
+    t
+}
+
 fn socket_path() -> PathBuf {
     if let Ok(p) = std::env::var("FLOW_DAEMON_SOCKET")
         && !p.trim().is_empty()
@@ -115,6 +141,21 @@ fn broadcast_event(method: &str, params: &Value) {
 }
 
 fn dispatch(id: u64, method: &str, params: Value) -> Response {
+    // Optional local token auth.
+    if let Ok(expected) = std::fs::read_to_string(token_path()) {
+        let expected = expected.trim();
+        if !expected.is_empty() {
+            let got = params.get("_token").and_then(Value::as_str).unwrap_or("");
+            if got != expected {
+                return Response {
+                    id,
+                    ok: false,
+                    result: None,
+                    error: Some("unauthorized".to_string()),
+                };
+            }
+        }
+    }
     let _guard = DB_LOCK.lock().unwrap();
     let res = (|| -> Result<Value, String> {
         match method {
@@ -322,6 +363,7 @@ fn dispatch(id: u64, method: &str, params: Value) -> Response {
 }
 
 pub fn run() {
+    let _token = ensure_token();
     let path = socket_path();
     let _ = std::fs::remove_file(&path);
     if let Some(parent) = path.parent() {

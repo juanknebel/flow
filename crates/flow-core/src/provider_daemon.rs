@@ -42,6 +42,11 @@ impl DaemonProvider {
         }
     }
 
+    pub fn token_path() -> PathBuf {
+        let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
+        PathBuf::from(home).join(".config/flow/daemon.token")
+    }
+
     pub fn socket_path() -> PathBuf {
         if let Ok(p) = std::env::var("FLOW_DAEMON_SOCKET")
             && !p.trim().is_empty()
@@ -110,6 +115,13 @@ impl DaemonProvider {
                 path: self.socket.clone(),
                 source: e,
             })?;
+        let mut params = params;
+        if let Ok(t) = std::fs::read_to_string(Self::token_path()) {
+            let t = t.trim();
+            if !t.is_empty() {
+                params["_token"] = Value::String(t.to_string());
+            }
+        }
         let req = Request {
             id: 1,
             method,
