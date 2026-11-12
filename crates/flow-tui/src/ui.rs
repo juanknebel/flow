@@ -57,6 +57,7 @@ pub fn action_from_key(code: KeyCode) -> Option<Action> {
         KeyCode::Char('/') => Action::Search,
         KeyCode::Char('p') => Action::ProjectFilter,
         KeyCode::Char('P') => Action::SwitchProject,
+        KeyCode::Char('D') => Action::Dashboard,
 
         _ => return None,
     })
@@ -571,6 +572,62 @@ pub fn render(f: &mut Frame, app: &App, render_area: Option<Rect>) {
         f.render_widget(
             Paragraph::new(Span::styled(hints, Style::default().fg(Color::DarkGray))),
             chunks[2],
+        );
+    }
+
+    if app.dashboard_open {
+        let area = centered(60, 60, f.area());
+        f.render_widget(Clear, area);
+        let mut lines = Vec::new();
+        let now_ms = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() as i64;
+        let done_ids: std::collections::HashSet<String> = app
+            .board
+            .columns
+            .iter()
+            .filter(|c| c.id.to_lowercase().contains("done"))
+            .flat_map(|c| c.cards.iter().map(|card| card.id.clone()))
+            .collect();
+        let mut total = 0usize;
+        let mut claimed = 0usize;
+        let mut blocked = 0usize;
+        for col in &app.board.columns {
+            for card in &col.cards {
+                total += 1;
+                if !card.claimed_by.is_empty() && card.claimed_until > now_ms {
+                    claimed += 1;
+                }
+                if card.depends_on.iter().any(|d| !done_ids.contains(d)) {
+                    blocked += 1;
+                }
+            }
+        }
+        lines.push(Line::from(Span::styled(
+            "Swarm Dashboard",
+            Style::default().add_modifier(Modifier::BOLD),
+        )));
+        lines.push(Line::from(format!("Total cards: {total}")));
+        lines.push(Line::from(format!("Claimed: {claimed}")));
+        lines.push(Line::from(format!("Blocked: {blocked}")));
+        lines.push(Line::from(format!(
+            "Free: {}",
+            total.saturating_sub(claimed)
+        )));
+        lines.push(Line::from(""));
+        lines.push(Line::from(Span::styled(
+            "Press Esc to close",
+            Style::default().fg(Color::DarkGray),
+        )));
+        f.render_widget(
+            Paragraph::new(lines).block(
+                Block::default()
+                    .title("Dashboard")
+                    .borders(Borders::ALL)
+                    .border_style(Style::default().fg(Color::Cyan)),
+            ),
+            area,
         );
     }
 }

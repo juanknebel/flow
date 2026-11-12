@@ -84,7 +84,7 @@ fn handle(req: RpcRequest) {
                 "result": {
                     "tools": [
                         {"name":"list_projects","description":"List tenant project codes","inputSchema":{"type":"object","properties":{}}},
-                        {"name":"load_board","description":"Load a board","inputSchema":{"type":"object","properties":{"project":{"type":"string"}},"required":["project"]}},
+                        {"name":"load_board","description":"Load a board","inputSchema":{"type":"object","properties":{"project":{"type":"string"},"limit":{"type":"integer"},"offset":{"type":"integer"}},"required":["project"]}},
                         {"name":"edit_card","description":"Edit a card","inputSchema":{"type":"object","properties":{"project":{"type":"string"},"card_id":{"type":"string"},"title":{"type":"string"},"body":{"type":"string"},"priority":{"type":"string"},"assignee":{"type":"string"},"depends_on":{"type":"string"}},"required":["project","card_id"]}},
                         {"name":"create_card","description":"Create a card","inputSchema":{"type":"object","properties":{"project":{"type":"string"},"column_id":{"type":"string"},"title":{"type":"string"}},"required":["project","column_id"]}},
                         {"name":"move_card","description":"Move a card","inputSchema":{"type":"object","properties":{"project":{"type":"string"},"card_id":{"type":"string"},"column_id":{"type":"string"}},"required":["project","card_id","column_id"]}},
@@ -135,8 +135,29 @@ fn call_tool(name: &str, args: &Value) -> Result<Value, String> {
         }
         "load_board" => {
             let project = args.get("project").and_then(Value::as_str).unwrap_or("");
+            let limit = args
+                .get("limit")
+                .and_then(Value::as_u64)
+                .map(|n| n as usize);
+            let offset = args
+                .get("offset")
+                .and_then(Value::as_u64)
+                .map(|n| n as usize)
+                .unwrap_or(0);
             let mut p = provider_for(project);
-            let board = p.load_board().map_err(|e| e.to_string())?;
+            let mut board = p.load_board().map_err(|e| e.to_string())?;
+            if let Some(limit) = limit {
+                for col in &mut board.columns {
+                    let start = offset.min(col.cards.len());
+                    let end = (start + limit).min(col.cards.len());
+                    col.cards = col.cards[start..end].to_vec();
+                }
+            } else if offset > 0 {
+                for col in &mut board.columns {
+                    let start = offset.min(col.cards.len());
+                    col.cards = col.cards[start..].to_vec();
+                }
+            }
             Ok(json!(board))
         }
         "create_card" => {

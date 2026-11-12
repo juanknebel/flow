@@ -183,8 +183,29 @@ fn dispatch(id: u64, method: &str, params: Value) -> Response {
                 } else {
                     Some(project)
                 };
+                let limit = params
+                    .get("limit")
+                    .and_then(Value::as_u64)
+                    .map(|n| n as usize);
+                let offset = params
+                    .get("offset")
+                    .and_then(Value::as_u64)
+                    .map(|n| n as usize)
+                    .unwrap_or(0);
                 let mut p = provider::from_env_with_project(project);
-                let board = p.load_board().map_err(|e| e.to_string())?;
+                let mut board = p.load_board().map_err(|e| e.to_string())?;
+                if let Some(limit) = limit {
+                    for col in &mut board.columns {
+                        let start = offset.min(col.cards.len());
+                        let end = (start + limit).min(col.cards.len());
+                        col.cards = col.cards[start..end].to_vec();
+                    }
+                } else if offset > 0 {
+                    for col in &mut board.columns {
+                        let start = offset.min(col.cards.len());
+                        col.cards = col.cards[start..].to_vec();
+                    }
+                }
                 Ok(serde_json::to_value(board).unwrap())
             }
             "create_card" => {

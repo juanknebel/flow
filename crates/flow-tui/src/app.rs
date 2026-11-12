@@ -19,6 +19,7 @@ pub enum Action {
     Search,
     ProjectFilter,
     SwitchProject,
+    Dashboard,
     Undo,
 }
 
@@ -433,6 +434,7 @@ pub struct App {
     pub project_select_state: Option<ProjectSelectState>,
     /// Active project filter: empty = show all, otherwise only these projects.
     pub project_filter: Vec<String>,
+    pub dashboard_open: bool,
     pub banner: Option<String>,
     pub sort_order: SortOrder,
     /// Most recently deleted card (and the column it lived in), for undo.
@@ -453,6 +455,7 @@ impl App {
             project_filter_state: None,
             project_select_state: None,
             project_filter: Vec::new(),
+            dashboard_open: false,
             banner: None,
             sort_order: SortOrder::default(),
             last_deleted: None,
@@ -560,6 +563,8 @@ impl App {
                     self.search_state = None;
                 } else if self.confirm_delete {
                     self.confirm_delete = false;
+                } else if self.dashboard_open {
+                    self.dashboard_open = false;
                 } else if self.detail_open {
                     self.detail_open = false;
                 } else {
@@ -589,7 +594,12 @@ impl App {
             | Action::Search
             | Action::ProjectFilter
             | Action::SwitchProject
-            | Action::Undo => {}
+            | Action::Undo
+            | Action::Dashboard => {
+                if matches!(a, Action::Dashboard) {
+                    self.dashboard_open = true;
+                }
+            }
         }
         false
     }
