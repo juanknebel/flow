@@ -43,12 +43,40 @@ fn handle(req: RpcRequest) {
                 "id": req.id,
                 "result": {
                     "protocolVersion": "2024-11-05",
-                    "capabilities": {"tools": {}},
+                    "capabilities": {"tools": {}, "resources": {}},
                     "serverInfo": {"name":"flow","version":"0.9.0"}
                 }
             }));
         }
         "notifications/initialized" => {}
+        "resources/list" => {
+            let project = req
+                .params
+                .get("project")
+                .and_then(Value::as_str)
+                .unwrap_or("");
+            // List a single resource per project is not enumerable here; return empty.
+            let _ = project;
+            send(json!({"jsonrpc":"2.0","id":req.id,"result":{"resources":[]}}));
+        }
+        "resources/read" => {
+            let uri = req.params.get("uri").and_then(Value::as_str).unwrap_or("");
+            // uri format: flow://board/<project>
+            let project = uri.strip_prefix("flow://board/").unwrap_or("");
+            let mut p = provider_for(project);
+            match p.load_board() {
+                Ok(board) => {
+                    send(
+                        json!({"jsonrpc":"2.0","id":req.id,"result":{"contents":[{"uri":uri,"mimeType":"application/json","text": serde_json::to_string(&board).unwrap_or_default()}]}}),
+                    );
+                }
+                Err(e) => {
+                    send(
+                        json!({"jsonrpc":"2.0","id":req.id,"error":{"code":-32000,"message":e.to_string()}}),
+                    );
+                }
+            }
+        }
         "tools/list" => {
             send(json!({
                 "jsonrpc":"2.0",
@@ -62,6 +90,7 @@ fn handle(req: RpcRequest) {
                         {"name":"move_card","description":"Move a card","inputSchema":{"type":"object","properties":{"project":{"type":"string"},"card_id":{"type":"string"},"column_id":{"type":"string"}},"required":["project","card_id","column_id"]}},
                         {"name":"delete_card","description":"Delete a card","inputSchema":{"type":"object","properties":{"project":{"type":"string"},"card_id":{"type":"string"}},"required":["project","card_id"]}},
                         {"name":"changes_since","description":"Cards changed after timestamp (millis)","inputSchema":{"type":"object","properties":{"project":{"type":"string"},"since":{"type":"integer"}},"required":["project"]}},
+                        {"name":"search_cards","description":"Search cards by text","inputSchema":{"type":"object","properties":{"project":{"type":"string"},"query":{"type":"string"}},"required":["project","query"]}},
                         {"name":"health","description":"Daemon health check","inputSchema":{"type":"object","properties":{}}},
                         {"name":"claim_card","description":"Acquire a lease on a card","inputSchema":{"type":"object","properties":{"project":{"type":"string"},"card_id":{"type":"string"},"agent":{"type":"string"},"lease_ms":{"type":"integer"}},"required":["project","card_id","agent"]}},
                         {"name":"release_card","description":"Release a lease on a card","inputSchema":{"type":"object","properties":{"project":{"type":"string"},"card_id":{"type":"string"},"agent":{"type":"string"}},"required":["project","card_id","agent"]}}
@@ -190,6 +219,24 @@ fn call_tool(name: &str, args: &Value) -> Result<Value, String> {
             Ok(json!({"ok": true}))
         }
         "health" => Ok(json!({"status":"ok"})),
+        "search_cards" => {
+            let project = args.get("project").and_then(Value::as_str).unwrap_or("");
+            let query = args.get("query").and_then(Value::as_str).unwrap_or("");
+            let ql = query.to_lowercase();
+            let mut p = provider_for(project);
+            let board = p.load_board().map_err(|e| e.to_string())?;
+            let mut out = Vec::new();
+            for col in &board.columns {
+                for card in &col.cards {
+                    if card.title.to_lowercase().contains(&ql)
+                        || card.description.to_lowercase().contains(&ql)
+                    {
+                        out.push(json!({"column_id": col.id, "card": card}));
+                    }
+                }
+            }
+            Ok(json!(out))
+        }
         "edit_card" => {
             let project = args.get("project").and_then(Value::as_str).unwrap_or("");
             let card_id = args.get("card_id").and_then(Value::as_str).unwrap_or("");
