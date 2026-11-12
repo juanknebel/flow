@@ -25,6 +25,9 @@ Opening a browser just to move an issue is slow and breaks focus.
 - **Undo delete**: Recover the last deleted card (`u`) — recreated with the same content in the same column.
 - **Integrated Editing**: Create/edit cards directly in an integrated popup with full cursor support, word wrapping, and familiar shortcuts.
 - **Export / Import**: Back up or copy a project's cards as JSON via `flow-cli` (`export` / `import`), with dependencies remapped automatically.
+- **Local daemon & MCP**: `flow daemon` coordinates concurrent agents over a Unix socket; `flow mcp` exposes tools to LLM agents. Auto-starts when needed.
+- **Agent leases**: Cards can be claimed/released by agents (`claim` / `release`) with time-boxed leases; expired leases are reaped automatically.
+- **Swarm dashboard**: `flow-cli dashboard` and `D` in the TUI show claimed/blocked/free cards and counts by state/column.
 - **Clean Visuals**: Terminal-native design powered by `ratatui` with responsive layouts.
 
 ## Project Structure
@@ -117,6 +120,13 @@ JIRA_API_TOKEN=your_token
 JIRA_BOARD_ID=123
 ```
 
+## Local daemon & agent integration
+- `FLOW_ACTOR=name` — audit label written to cards on create/update.
+- `FLOW_DAEMON_SOCKET=/path` — Unix socket for the daemon (default `~/.config/flow/flow.sock`).
+- The daemon stores its auth token in `~/.config/flow/daemon.token` (mode 600) and is auto-started by clients.
+- `flow daemon` — run the coordinator manually.
+- `flow mcp` — run an MCP server over stdio for LLM agents.
+
 ## Keybindings
 
 ### Navigation
@@ -126,6 +136,7 @@ JIRA_BOARD_ID=123
 - `/` — search by title/description; `↓`/`↑` jump to next/previous match while typing, `Enter`/`Esc` to close
 - `p` — filter by project (all-projects view only)
 - `P` — switch project (local)
+- `D` — swarm dashboard
 - `d` (in project picker) — delete project (type the code to confirm when it has cards)
 - `H` / `L` — move card left / right
 - `Enter` — toggle detail view
@@ -174,6 +185,11 @@ flow-cli --project acme edit FLOW-5 --depends-on FLOW-1,FLOW-2
 
 # Delete a whole project (requires --confirm when it has cards)
 flow-cli --project oldproj delete-project --confirm oldproj
+flow-cli --project acme claim FLOW-1 --agent bot --lease-ms 300000
+flow-cli --project acme release FLOW-1 --agent bot
+flow-cli --project acme dashboard -f json
+flow daemon
+flow mcp
 
 # List column IDs
 flow-cli --project acme columns

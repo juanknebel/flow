@@ -24,6 +24,9 @@ cargo install --path crates/flow-cli  # install CLI binary
 - `FLOW_BOARD_PATH=/path` — overrides the SQLite file for local mode (a directory keeps working: `flow.db` is created inside it; default: `~/.config/flow/flow.db`)
 - `FLOW_PROJECT=code` — selects the tenant for the TUI in local mode (`demo` seeds a demo board on first use; when unset, the TUI shows a project picker). `all` (any case) opens the read-only union of every tenant. The CLI ignores it and requires `--project` instead
 - Jira mode requires: `JIRA_BASE_URL`, `JIRA_EMAIL`, `JIRA_API_TOKEN`, `JIRA_BOARD_ID`
+- `FLOW_ACTOR=name` — audit label written to cards on create/update (default empty)
+- `FLOW_DAEMON_SOCKET=/path` — Unix socket for the local daemon (default `~/.config/flow/flow.sock`)
+- `FLOW_DAEMON_TOKEN` is read from `~/.config/flow/daemon.token` (auto-created) for local auth
 
 ## Architecture
 
@@ -33,6 +36,7 @@ Cargo workspace (edition 2024) with 4 crates under `crates/`:
   - `model.rs` — Data types: `Board`, `Column`, `Card`, `Priority`.
   - `provider.rs` — `Provider` trait and `from_env()` factory.
   - `provider_local.rs` — Local SQLite provider (single `.db` file, multitenant by project code), delegates to `store_db`.
+  - `provider_daemon.rs` — Client for the local daemon (Unix socket).
   - `provider_jira.rs` — Jira REST API provider.
   - `store_db.rs` — SQLite storage: schema, CRUD partitioned by tenant, demo seed.
   - `format.rs` — Output formatters (plain, json, xml, csv, table, markdown).
@@ -41,7 +45,7 @@ Cargo workspace (edition 2024) with 4 crates under `crates/`:
   - `app.rs` — App state machine, `Action` enum, `EditState`.
   - `ui.rs` — Ratatui rendering and key handling.
 
-- **`flow`** (binary) — TUI launcher. Depends on `flow-core` + `flow-tui`.
+- **`flow`** (binary) — TUI launcher plus `daemon` and `mcp` subcommands. Depends on `flow-core` + `flow-tui`.
 
 - **`flow-cli`** (binary) — CLI commands. Depends on `flow-core` with `cli` feature.
 
@@ -70,6 +74,12 @@ FLOW_BOARD_PATH=./.board flow-cli --project flow delete <card_id>
 FLOW_BOARD_PATH=./.board flow-cli --project <code> delete-project --confirm <code>  # delete a whole tenant
 FLOW_BOARD_PATH=./.board flow-cli --project flow export --out flow-backup.json     # back up all cards as JSON
 FLOW_BOARD_PATH=./.board flow-cli --project flow import flow-backup.json          # restore/copy cards from a JSON export
+FLOW_BOARD_PATH=./.board flow-cli --project flow claim <card_id> --agent bot --lease-ms 300000
+FLOW_BOARD_PATH=./.board flow-cli --project flow release <card_id> --agent bot
+FLOW_BOARD_PATH=./.board flow-cli --project flow dashboard                       # swarm summary
+FLOW_BOARD_PATH=./.board flow  # launches TUI (D opens dashboard)
+flow daemon                                                              # local coordinator
+flow mcp                                                                 # MCP server for agents
 ```
 
 Use `flow-cli` for board management and `flow` to launch the TUI. Use this board to track tasks, bugs, and features for the project.
