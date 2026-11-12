@@ -185,7 +185,8 @@ impl Provider for LocalProvider {
         }
         // A card can't be deleted while other cards still depend on it —
         // that would leave a dangling reference.
-        let board = self.load_board()?;
+        let board = store_db::load_board_all(&self.db_path)
+            .map_err(|e| map_err("load_board", &self.db_path, e))?;
         let dependents = board.dependents_of(card_id);
         if !dependents.is_empty() {
             let ids: Vec<&str> = dependents.iter().map(|c| c.id.as_str()).collect();
@@ -277,7 +278,8 @@ impl LocalProvider {
             return Ok(deps);
         }
 
-        let board = self.load_board()?;
+        let board = store_db::load_board_all(&self.db_path)
+            .map_err(|e| map_err("load_board", &self.db_path, e))?;
         for dep in &deps {
             if dep == card_id {
                 return Err(ProviderError::Validation {
