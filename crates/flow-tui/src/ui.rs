@@ -164,6 +164,13 @@ pub fn render(f: &mut Frame, app: &App, render_area: Option<Rect>) {
                 Style::default().fg(priority_color(card.priority)),
             ),
         ]));
+        lines.push(Line::from(vec![
+            Span::raw("State: "),
+            Span::styled(
+                app.board.state_of(card).label(),
+                Style::default().fg(Color::Cyan),
+            ),
+        ]));
         if !card.project.is_empty() {
             lines.push(Line::from(vec![
                 Span::raw("Project: "),

@@ -337,6 +337,26 @@ mod tests {
     }
 
     #[test]
+    fn cross_project_dependency_is_allowed() -> TestResult {
+        let db = tmp_db();
+        let mut p1 = LocalProvider::new(db.clone(), "aaa".to_string());
+        let a = p1.create_card("todo", "aaa").map_err(|e| e.to_string())?;
+        let mut p2 = LocalProvider::new(db.clone(), "bbb".to_string());
+        let b = p2.create_card("todo", "bbb").map_err(|e| e.to_string())?;
+        // b depends on a (cross-project).
+        p2.update_card(&b, "B", "", Priority::Medium, "", "bbb", &[a.clone()], None)
+            .map_err(|e| e.to_string())?;
+        let board = p2.load_board().map_err(|e| e.to_string())?;
+        assert_eq!(board.find_card(&b).unwrap().depends_on, vec![a.clone()]);
+        // deleting a is vetoed because b depends on it (cross-project).
+        let mut p1b = LocalProvider::new(db.clone(), "aaa".to_string());
+        let err = p1b.delete_card(&a).unwrap_err();
+        assert!(matches!(err, ProviderError::Validation { .. }));
+        cleanup(&db);
+        Ok(())
+    }
+
+    #[test]
     fn map_err_maps_store_variants() {
         let db = PathBuf::from("/tmp/flow-test.db");
         assert!(matches!(
