@@ -711,6 +711,13 @@ pub fn draw_col(f: &mut Frame, app: &App, idx: usize, rect: Rect) {
                 spans.push(Span::styled(format!("{} ", c.project), proj_style));
             }
             spans.push(Span::styled(c.title.clone(), title_style));
+            let state = app.board.state_of(c);
+            if state != flow_core::model::CardState::Free {
+                spans.push(Span::styled(
+                    format!(" [{}]", state.label()),
+                    Style::default().fg(Color::DarkGray),
+                ));
+            }
             let now_ms = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap_or_default()
