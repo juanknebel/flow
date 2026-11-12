@@ -6,6 +6,9 @@ use std::thread;
 
 static DB_LOCK: Mutex<()> = Mutex::new(());
 static SUBSCRIBERS: Mutex<Vec<UnixStream>> = Mutex::new(Vec::new());
+static METRIC_REQUESTS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+static METRIC_ERRORS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+static METRIC_MUTATIONS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
 use flow_core::provider;
 use serde::{Deserialize, Serialize};
@@ -141,6 +144,7 @@ fn broadcast_event(method: &str, params: &Value) {
 }
 
 fn dispatch(id: u64, method: &str, params: Value) -> Response {
+    METRIC_REQUESTS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     // Optional local token auth.
     if let Ok(expected) = std::fs::read_to_string(token_path()) {
         let expected = expected.trim();
@@ -160,6 +164,12 @@ fn dispatch(id: u64, method: &str, params: Value) -> Response {
     let res = (|| -> Result<Value, String> {
         match method {
             "ping" => Ok(Value::String("pong".to_string())),
+            "metrics" => Ok(serde_json::json!({
+                "requests": METRIC_REQUESTS.load(std::sync::atomic::Ordering::Relaxed),
+                "errors": METRIC_ERRORS.load(std::sync::atomic::Ordering::Relaxed),
+                "mutations": METRIC_MUTATIONS.load(std::sync::atomic::Ordering::Relaxed),
+                "subscribers": SUBSCRIBERS.lock().unwrap().len(),
+            })),
             "health" => Ok(serde_json::json!({"status":"ok","socket": socket_path()})),
             "list_projects" => {
                 let mut p = provider::from_env();
@@ -344,7 +354,11 @@ fn dispatch(id: u64, method: &str, params: Value) -> Response {
             | "delete_project"
     );
     if is_mutation && res.is_ok() {
+        METRIC_MUTATIONS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         broadcast_event(method, &params);
+    }
+    if res.is_err() {
+        METRIC_ERRORS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     }
     match res {
         Ok(result) => Response {
@@ -363,6 +377,11 @@ fn dispatch(id: u64, method: &str, params: Value) -> Response {
 }
 
 pub fn run() {
+    tracing_subscriber::fmt()
+        .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
+        .with_target(false)
+        .init();
+    tracing::info!("flow daemon starting");
     let _token = ensure_token();
     let path = socket_path();
     let _ = std::fs::remove_file(&path);

@@ -623,6 +623,13 @@ pub fn draw_col(f: &mut Frame, app: &App, idx: usize, rect: Rect) {
                 spans.push(Span::styled(format!("{} ", c.project), proj_style));
             }
             spans.push(Span::styled(c.title.clone(), title_style));
+            let now_ms = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis() as i64;
+            if !c.claimed_by.is_empty() && c.claimed_until > now_ms {
+                spans.push(Span::styled(" ⚿", Style::default().fg(Color::Magenta)));
+            }
             if !c.depends_on.is_empty() {
                 let label = if c.depends_on.len() == 1 {
                     format!("  \u{26D3} {}", c.depends_on[0])

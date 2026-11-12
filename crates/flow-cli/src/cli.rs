@@ -507,11 +507,15 @@ pub fn run(cmd: Command, fmt: Format, project: Option<&str>) -> io::Result<()> {
             let mut claimed: Vec<(String, String, i64)> = Vec::new();
             let mut blocked: Vec<String> = Vec::new();
             let mut free = 0usize;
+            let mut by_state: std::collections::BTreeMap<String, usize> =
+                std::collections::BTreeMap::new();
 
             for col in &board.columns {
                 by_column.push((col.id.clone(), col.cards.len()));
                 for card in &col.cards {
                     total += 1;
+                    let state = board.state_of(card).label().to_string();
+                    *by_state.entry(state).or_insert(0) += 1;
                     if !card.claimed_by.is_empty() && card.claimed_until > now {
                         claimed.push((
                             card.id.clone(),
@@ -552,6 +556,10 @@ pub fn run(cmd: Command, fmt: Format, project: Option<&str>) -> io::Result<()> {
                 println!("Blocked cards: {}", blocked.len());
                 for id in &blocked {
                     println!("  {id}");
+                }
+                println!("By state:");
+                for (st, n) in &by_state {
+                    println!("  {st}: {n}");
                 }
                 println!("By column:");
                 for (col, n) in &by_column {
