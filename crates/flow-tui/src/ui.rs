@@ -624,6 +624,30 @@ pub fn render(f: &mut Frame, app: &App, render_area: Option<Rect>) {
         )));
         lines.push(Line::from(""));
         lines.push(Line::from(Span::styled(
+            "By column:",
+            Style::default().add_modifier(Modifier::BOLD),
+        )));
+        for col in &app.board.columns {
+            lines.push(Line::from(format!("  {}: {}", col.id, col.cards.len())));
+        }
+        lines.push(Line::from(""));
+        lines.push(Line::from(Span::styled(
+            "By state:",
+            Style::default().add_modifier(Modifier::BOLD),
+        )));
+        let mut by_state: std::collections::BTreeMap<String, usize> =
+            std::collections::BTreeMap::new();
+        for col in &app.board.columns {
+            for card in &col.cards {
+                *by_state
+                    .entry(app.board.state_of(card).label().to_string())
+                    .or_insert(0) += 1;
+            }
+        }
+        for (st, n) in &by_state {
+            lines.push(Line::from(format!("  {st}: {n}")));
+        }
+        lines.push(Line::from(Span::styled(
             "Press Esc to close",
             Style::default().fg(Color::DarkGray),
         )));
