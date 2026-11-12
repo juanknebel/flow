@@ -302,7 +302,7 @@ fn call_tool(name: &str, args: &Value) -> Result<Value, String> {
                 })
                 .unwrap_or(card.depends_on.clone());
             p.update_card(
-                &card_id,
+                card_id,
                 &title,
                 &body,
                 priority,

@@ -344,7 +344,7 @@ mod tests {
         let mut p2 = LocalProvider::new(db.clone(), "bbb".to_string());
         let b = p2.create_card("todo", "bbb").map_err(|e| e.to_string())?;
         // b depends on a (cross-project).
-        p2.update_card(&b, "B", "", Priority::Medium, "", "bbb", &[a.clone()], None)
+        p2.update_card(&b, "B", "", Priority::Medium, "", "bbb", std::slice::from_ref(&a), None)
             .map_err(|e| e.to_string())?;
         let board = p2.load_board().map_err(|e| e.to_string())?;
         assert_eq!(board.find_card(&b).unwrap().depends_on, vec![a.clone()]);
