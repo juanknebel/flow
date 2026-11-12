@@ -622,6 +622,59 @@ pub fn render(f: &mut Frame, app: &App, render_area: Option<Rect>) {
             "Free: {}",
             total.saturating_sub(claimed)
         )));
+        // Claimed detail
+        let mut claimed_list = Vec::new();
+        let now_ms2 = now_ms;
+        for col in &app.board.columns {
+            for card in &col.cards {
+                if !card.claimed_by.is_empty() && card.claimed_until > now_ms2 {
+                    claimed_list.push(format!(
+                        "  {} -> {} (until {})",
+                        card.id, card.claimed_by, card.claimed_until
+                    ));
+                }
+            }
+        }
+        if !claimed_list.is_empty() {
+            lines.push(Line::from(""));
+            lines.push(Line::from(Span::styled(
+                "Claimed cards:",
+                Style::default().add_modifier(Modifier::BOLD),
+            )));
+            for l in claimed_list {
+                lines.push(Line::from(l));
+            }
+        }
+        // Blocked detail
+        let done_ids: std::collections::HashSet<String> = app
+            .board
+            .columns
+            .iter()
+            .filter(|c| c.id.to_lowercase().contains("done"))
+            .flat_map(|c| c.cards.iter().map(|card| card.id.clone()))
+            .collect();
+        let mut blocked_list = Vec::new();
+        for col in &app.board.columns {
+            for card in &col.cards {
+                if card.depends_on.iter().any(|d| !done_ids.contains(d)) {
+                    blocked_list.push(format!(
+                        "  {} (depends on {})",
+                        card.id,
+                        card.depends_on.join(", ")
+                    ));
+                }
+            }
+        }
+        if !blocked_list.is_empty() {
+            lines.push(Line::from(""));
+            lines.push(Line::from(Span::styled(
+                "Blocked cards:",
+                Style::default().add_modifier(Modifier::BOLD),
+            )));
+            for l in blocked_list {
+                lines.push(Line::from(l));
+            }
+        }
         lines.push(Line::from(""));
         lines.push(Line::from(Span::styled(
             "By column:",
