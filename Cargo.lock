@@ -566,7 +566,7 @@ checksum = "0ce7134b9999ecaf8bcd65542e436736ef32ddca1b3e06094cb6ec5755203b80"
 
 [[package]]
 name = "flow"
-version = "1.0.0-beta"
+version = "1.0.0-beta2"
 dependencies = [
  "crossterm",
  "flow-core",
@@ -581,7 +581,7 @@ dependencies = [
 
 [[package]]
 name = "flow-cli"
-version = "1.0.0-beta"
+version = "1.0.0-beta2"
 dependencies = [
  "clap",
  "flow-core",
@@ -590,7 +590,7 @@ dependencies = [
 
 [[package]]
 name = "flow-core"
-version = "1.0.0-beta"
+version = "1.0.0-beta2"
 dependencies = [
  "clap",
  "reqwest",
@@ -602,7 +602,7 @@ dependencies = [
 
 [[package]]
 name = "flow-tui"
-version = "1.0.0-beta"
+version = "1.0.0-beta2"
 dependencies = [
  "crossterm",
  "flow-core",
