@@ -1,6 +1,7 @@
 use std::io::{BufRead, BufReader, Write};
 
 use flow_core::provider;
+use flow_tui::app::parse_depends_on_field;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
@@ -85,7 +86,7 @@ fn handle(req: RpcRequest) {
                     "tools": [
                         {"name":"list_projects","description":"List tenant project codes","inputSchema":{"type":"object","properties":{}}},
                         {"name":"load_board","description":"Load a board","inputSchema":{"type":"object","properties":{"project":{"type":"string"},"limit":{"type":"integer"},"offset":{"type":"integer"}},"required":["project"]}},
-                        {"name":"edit_card","description":"Edit a card","inputSchema":{"type":"object","properties":{"project":{"type":"string"},"card_id":{"type":"string"},"title":{"type":"string"},"body":{"type":"string"},"priority":{"type":"string"},"assignee":{"type":"string"},"depends_on":{"type":"string"}},"required":["project","card_id"]}},
+                        {"name":"edit_card","description":"Edit a card","inputSchema":{"type":"object","properties":{"project":{"type":"string"},"card_id":{"type":"string"},"title":{"type":"string"},"body":{"type":"string"},"priority":{"type":"string"},"assignee":{"type":"string"},"depends_on":{"type":"array","items":{"type":"string"}}},"required":["project","card_id"]}},
                         {"name":"create_card","description":"Create a card","inputSchema":{"type":"object","properties":{"project":{"type":"string"},"column_id":{"type":"string"},"title":{"type":"string"}},"required":["project","column_id"]}},
                         {"name":"move_card","description":"Move a card","inputSchema":{"type":"object","properties":{"project":{"type":"string"},"card_id":{"type":"string"},"column_id":{"type":"string"}},"required":["project","card_id","column_id"]}},
                         {"name":"delete_card","description":"Delete a card","inputSchema":{"type":"object","properties":{"project":{"type":"string"},"card_id":{"type":"string"}},"required":["project","card_id"]}},
@@ -123,6 +124,22 @@ fn handle(req: RpcRequest) {
                 );
             }
         }
+    }
+}
+
+/// Parses the `depends_on` tool argument: a JSON array of card ids (each
+/// element may itself hold a comma-separated list), a single
+/// comma-separated string, or absent (which keeps the card's current
+/// list). An explicit empty array/string clears the list.
+pub(crate) fn parse_depends_on_arg(arg: Option<&Value>, current: &[String]) -> Vec<String> {
+    match arg {
+        Some(Value::Array(items)) => items
+            .iter()
+            .filter_map(Value::as_str)
+            .flat_map(parse_depends_on_field)
+            .collect(),
+        Some(Value::String(s)) => parse_depends_on_field(s),
+        _ => current.to_vec(),
     }
 }
 
@@ -264,10 +281,7 @@ fn call_tool(name: &str, args: &Value) -> Result<Value, String> {
             let mut p = provider_for(project);
             let board = p.load_board().map_err(|e| e.to_string())?;
             let card = board
-                .columns
-                .iter()
-                .flat_map(|c| c.cards.iter())
-                .find(|c| c.id == card_id)
+                .find_card_case_insensitive(card_id)
                 .ok_or_else(|| format!("card not found: {card_id}"))?
                 .clone();
             let title = args
@@ -290,17 +304,7 @@ fn call_tool(name: &str, args: &Value) -> Result<Value, String> {
                 .and_then(Value::as_str)
                 .unwrap_or(&card.assignee)
                 .to_string();
-            let depends_on: Vec<String> = args
-                .get("depends_on")
-                .and_then(Value::as_str)
-                .map(|s| {
-                    s.split(',')
-                        .map(str::trim)
-                        .filter(|x| !x.is_empty())
-                        .map(String::from)
-                        .collect()
-                })
-                .unwrap_or(card.depends_on.clone());
+            let depends_on = parse_depends_on_arg(args.get("depends_on"), &card.depends_on);
             p.update_card(
                 card_id,
                 &title,
@@ -339,5 +343,48 @@ pub fn run() {
             }
         };
         handle(req);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn depends_on_arg_accepts_comma_string() {
+        let arg = json!("ACME-1, acme-2 ");
+        assert_eq!(
+            parse_depends_on_arg(Some(&arg), &[]),
+            vec!["ACME-1".to_string(), "acme-2".to_string()]
+        );
+    }
+
+    #[test]
+    fn depends_on_arg_absent_keeps_current() {
+        let current = vec!["ACME-9".to_string()];
+        assert_eq!(parse_depends_on_arg(None, &current), current);
+    }
+
+    #[test]
+    fn depends_on_arg_empty_string_clears() {
+        let arg = json!("");
+        let current = vec!["ACME-9".to_string()];
+        assert!(parse_depends_on_arg(Some(&arg), &current).is_empty());
+    }
+
+    #[test]
+    fn depends_on_arg_accepts_array() {
+        let arg = json!(["ACME-1", "acme-2"]);
+        assert_eq!(
+            parse_depends_on_arg(Some(&arg), &[]),
+            vec!["ACME-1".to_string(), "acme-2".to_string()]
+        );
+    }
+
+    #[test]
+    fn depends_on_arg_empty_array_clears() {
+        let arg = json!([]);
+        let current = vec!["ACME-9".to_string()];
+        assert!(parse_depends_on_arg(Some(&arg), &current).is_empty());
     }
 }

@@ -19,7 +19,7 @@ Opening a browser just to move an issue is slow and breaks focus.
 - **Keyboard-first**: One-keystroke transitions (`H` / `L`), `hjkl` and arrow-key navigation.
 - **Card Priority**: Color-coded priority levels (Low, Medium, High, Bug, Wishlist) visible on the board and editable in the popup. Cards are automatically sorted by priority (Bug → High → Medium → Low → Wishlist), then alphabetically by title.
 - **Card Assignee**: Assign cards to team members (email or user id) via CLI (`--assignee`) or the TUI edit popup.
-- **Card Dependencies**: Cards can depend on other cards (`--depends-on`, or the Depends On field in the editor). Blocked cards show an indicator on the board; a card can't be deleted while others still depend on it, and cycles/self-dependencies/missing ids are rejected.
+- **Card Dependencies**: Cards can depend on other cards (`--depends-on`, or the Depends On field in the editor). Blocked cards show an indicator on the board; a card can't be deleted while others still depend on it, and cycles/self-dependencies/missing ids are rejected. Dependency ids match case-insensitively.
 - **Search**: Fuzzy-free substring search (`/`) over title and description, with next/previous match navigation.
 - **Project filter & all-projects view**: `FLOW_PROJECT=all` opens a read-only union of every tenant, filterable to a subset of projects (`p`) in the TUI.
 - **Undo delete**: Recover the last deleted card (`u`) — recreated with the same content in the same column.
@@ -103,6 +103,14 @@ when a real tenant is first opened).
 
 `FLOW_PROJECT=demo` seeds a demo board with example cards on first use.
 
+### Card IDs
+New cards get sequential ids prefixed by the uppercased tenant code
+(`ACME-1`, `ACME-2`, …). Numbers come from a per-tenant counter that never
+goes backwards, so deleted numbers are never reused. Ids may be typed in
+any case (`acme-1`) in the CLI, the TUI editor, the daemon and MCP: they
+resolve to the stored id. Cards created before sequential ids keep their
+original id.
+
 Valid priorities: `LOW`, `MEDIUM`, `HIGH`, `BUG`, `WISHLIST`.
 
 ## Jira mode
@@ -180,7 +188,8 @@ flow-cli --project acme move FLOW-1 in_progress
 # Delete a card permanently
 flow-cli --project acme delete FLOW-1
 
-# Make a card depend on another (comma-separated or repeated flag)
+# Make a card depend on another (comma-separated or repeated flag;
+# ids match case-insensitively and are stored uppercase)
 flow-cli --project acme edit FLOW-5 --depends-on FLOW-1,FLOW-2
 
 # Delete a whole project (requires --confirm when it has cards)

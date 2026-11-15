@@ -233,22 +233,22 @@ fn dispatch(id: u64, method: &str, params: Value) -> Response {
                     .unwrap_or("medium");
                 let priority = flow_core::Priority::from_str(priority);
                 let assignee = str_param(&params, "assignee");
-                let depends_on: Vec<String> = params
-                    .get("depends_on")
-                    .and_then(Value::as_array)
-                    .map(|a| {
-                        a.iter()
-                            .filter_map(Value::as_str)
-                            .map(String::from)
-                            .collect()
-                    })
-                    .unwrap_or_default();
                 let project_opt = if project.is_empty() {
                     None
                 } else {
                     Some(project.clone())
                 };
                 let mut p = provider::from_env_with_project(project_opt);
+                // Load first: unknown cards fail early, and the current
+                // dependency list is the fallback when the key is absent —
+                // a missing or mistyped value must never silently wipe deps.
+                let board = p.load_board().map_err(|e| e.to_string())?;
+                let current = board
+                    .find_card_case_insensitive(&card_id)
+                    .map(|c| c.depends_on.clone())
+                    .ok_or_else(|| format!("card not found: {card_id}"))?;
+                let depends_on =
+                    crate::mcp::parse_depends_on_arg(params.get("depends_on"), &current);
                 let expected = params.get("expected_version").and_then(Value::as_u64);
                 p.update_card(
                     &card_id,
@@ -424,5 +424,203 @@ pub fn run() {
             }
             Err(e) => eprintln!("accept error: {e}"),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Serializes env-dependent tests: they share process-global env vars.
+    static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    struct EnvGuard {
+        key: &'static str,
+        prev: Option<String>,
+    }
+
+    impl EnvGuard {
+        fn set(key: &'static str, value: &std::path::Path) -> Self {
+            let prev = std::env::var(key).ok();
+            unsafe { std::env::set_var(key, value) };
+            Self { key, prev }
+        }
+
+        fn remove(key: &'static str) -> Self {
+            let prev = std::env::var(key).ok();
+            unsafe { std::env::remove_var(key) };
+            Self { key, prev }
+        }
+    }
+
+    impl Drop for EnvGuard {
+        fn drop(&mut self) {
+            unsafe {
+                match &self.prev {
+                    Some(v) => std::env::set_var(self.key, v),
+                    None => std::env::remove_var(self.key),
+                }
+            }
+        }
+    }
+
+    fn deps_of(board: &Value, card_id: &str) -> Vec<String> {
+        board["columns"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .flat_map(|c| c["cards"].as_array().into_iter().flatten())
+            .find(|c| c["id"] == card_id)
+            .map(|c| {
+                c["depends_on"]
+                    .as_array()
+                    .cloned()
+                    .unwrap_or_default()
+                    .into_iter()
+                    .filter_map(|v| v.as_str().map(String::from))
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    #[test]
+    fn update_card_depends_on_accepts_string_and_never_wipes_silently() {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos();
+        let db = std::env::temp_dir().join(format!("flow-daemon-test-{nanos}.db"));
+        let _board_path = EnvGuard::set("FLOW_BOARD_PATH", &db);
+        // Dispatch resolves providers from env; force local mode even on
+        // machines with Jira configured.
+        let _provider = EnvGuard::remove("FLOW_PROVIDER");
+        // Point HOME at an empty dir: no token file means no auth, so the
+        // test behaves the same with or without a real daemon token around.
+        let home = std::env::temp_dir().join(format!("flow-daemon-test-home-{nanos}"));
+        let _home = EnvGuard::set("HOME", &home);
+
+        // Request ids are echoed back by dispatch but otherwise unused.
+        let call = |method: &str, params: Value| dispatch(1, method, params);
+        let load = || {
+            call("load_board", serde_json::json!({"project": "acme"}))
+                .result
+                .unwrap()
+        };
+        let created_id = |r: &Response| {
+            r.result
+                .as_ref()
+                .and_then(Value::as_str)
+                .unwrap_or_else(|| panic!("create failed: {:?}", r.error))
+                .to_string()
+        };
+
+        let a = created_id(&call(
+            "create_card",
+            serde_json::json!({"project": "acme", "column_id": "todo"}),
+        ));
+        let b = created_id(&call(
+            "create_card",
+            serde_json::json!({"project": "acme", "column_id": "todo"}),
+        ));
+        let c = created_id(&call(
+            "create_card",
+            serde_json::json!({"project": "acme", "column_id": "todo"}),
+        ));
+        assert_eq!(
+            (a.as_str(), b.as_str(), c.as_str()),
+            ("ACME-1", "ACME-2", "ACME-3")
+        );
+
+        // A comma-separated string (possibly lowercase) is parsed and stored
+        // canonical; the owner id matches case-insensitively too.
+        let r = call(
+            "update_card",
+            serde_json::json!({
+                "project": "acme",
+                "card_id": "acme-3",
+                "title": "C",
+                "description": "",
+                "priority": "medium",
+                "assignee": "",
+                "depends_on": "acme-1,ACME-2",
+            }),
+        );
+        assert!(r.ok, "string deps rejected: {:?}", r.error);
+        assert_eq!(
+            deps_of(&load(), "ACME-3"),
+            vec!["ACME-1".to_string(), "ACME-2".to_string()]
+        );
+
+        // A missing key keeps the current list instead of wiping it.
+        let r = call(
+            "update_card",
+            serde_json::json!({
+                "project": "acme",
+                "card_id": "ACME-3",
+                "title": "C",
+                "description": "",
+                "priority": "medium",
+                "assignee": "",
+            }),
+        );
+        assert!(r.ok, "missing deps rejected: {:?}", r.error);
+        assert_eq!(
+            deps_of(&load(), "ACME-3"),
+            vec!["ACME-1".to_string(), "ACME-2".to_string()]
+        );
+
+        // A mistyped value also keeps rather than wipes.
+        let r = call(
+            "update_card",
+            serde_json::json!({
+                "project": "acme",
+                "card_id": "ACME-3",
+                "title": "C",
+                "description": "",
+                "priority": "medium",
+                "assignee": "",
+                "depends_on": 42,
+            }),
+        );
+        assert!(r.ok, "mistyped deps rejected: {:?}", r.error);
+        assert_eq!(
+            deps_of(&load(), "ACME-3"),
+            vec!["ACME-1".to_string(), "ACME-2".to_string()]
+        );
+
+        // An explicit empty array still clears.
+        let r = call(
+            "update_card",
+            serde_json::json!({
+                "project": "acme",
+                "card_id": "ACME-3",
+                "title": "C",
+                "description": "",
+                "priority": "medium",
+                "assignee": "",
+                "depends_on": [],
+            }),
+        );
+        assert!(r.ok, "explicit clear rejected: {:?}", r.error);
+        assert!(deps_of(&load(), "ACME-3").is_empty());
+
+        // Unknown cards fail early with NotFound.
+        let r = call(
+            "update_card",
+            serde_json::json!({
+                "project": "acme",
+                "card_id": "nope-1",
+                "title": "X",
+                "description": "",
+                "priority": "medium",
+                "assignee": "",
+                "depends_on": [],
+            }),
+        );
+        assert!(!r.ok);
+        assert!(r.error.unwrap().contains("nope-1"));
+
+        let _ = std::fs::remove_file(&db);
     }
 }

@@ -647,10 +647,57 @@ fn find_card<'a>(
     board: &'a flow_core::model::Board,
     card_id: &str,
 ) -> io::Result<(&'a flow_core::model::Column, &'a flow_core::model::Card)> {
+    // User-typed ids match case-insensitively (`acme-1` finds `ACME-1`);
+    // the error echoes the typed id.
+    let want = card_id.to_lowercase();
     for col in &board.columns {
-        if let Some(card) = col.cards.iter().find(|c| c.id == card_id) {
+        if let Some(card) = col.cards.iter().find(|c| c.id.to_lowercase() == want) {
             return Ok((col, card));
         }
     }
     Err(io::Error::other(format!("card not found: {card_id}")))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use flow_core::model::{Board, Card, Column};
+
+    fn card(id: &str) -> Card {
+        Card {
+            id: id.into(),
+            title: id.into(),
+            description: String::new(),
+            priority: Priority::Medium,
+            assignee: String::new(),
+            project: String::new(),
+            depends_on: Vec::new(),
+            version: 1,
+            created_at: 0,
+            updated_at: 0,
+            created_by: String::new(),
+            updated_by: String::new(),
+            claimed_by: String::new(),
+            claimed_until: 0,
+        }
+    }
+
+    #[test]
+    fn find_card_matches_id_case_insensitively() {
+        let board = Board {
+            columns: vec![Column {
+                id: "todo".into(),
+                title: "TO DO".into(),
+                cards: vec![card("ACME-1")],
+            }],
+        };
+        let (col, found) = find_card(&board, "acme-1").expect("lowercase finds");
+        assert_eq!(col.id, "todo");
+        assert_eq!(found.id, "ACME-1");
+        assert!(find_card(&board, "ACME-1").is_ok());
+        let err = find_card(&board, "nope-1")
+            .err()
+            .expect("missing id must fail");
+        assert!(err.to_string().contains("nope-1"), "{err}");
+    }
 }

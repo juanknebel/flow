@@ -265,6 +265,16 @@ impl Board {
             .find(|c| c.id == id)
     }
 
+    /// Find a card by id, ignoring case. Used to resolve user-typed
+    /// dependency ids (`acme-1`) to the canonical stored id (`ACME-1`).
+    pub fn find_card_case_insensitive(&self, id: &str) -> Option<&Card> {
+        let want = id.to_lowercase();
+        self.columns
+            .iter()
+            .flat_map(|col| col.cards.iter())
+            .find(|c| c.id.to_lowercase() == want)
+    }
+
     /// All cards (other than `id` itself) whose `depends_on` list contains `id`.
     pub fn dependents_of(&self, id: &str) -> Vec<&Card> {
         self.columns
@@ -363,6 +373,15 @@ mod tests {
         let b = board(vec![card("A", &[]), card("B", &[])]);
         assert!(b.find_card("A").is_some());
         assert!(b.find_card("MISSING").is_none());
+    }
+
+    #[test]
+    fn find_card_case_insensitive_matches_any_case() {
+        let b = board(vec![card("ACME-1", &[])]);
+        assert_eq!(b.find_card_case_insensitive("acme-1").unwrap().id, "ACME-1");
+        assert_eq!(b.find_card_case_insensitive("Acme-1").unwrap().id, "ACME-1");
+        assert_eq!(b.find_card_case_insensitive("ACME-1").unwrap().id, "ACME-1");
+        assert!(b.find_card_case_insensitive("MISSING").is_none());
     }
 
     #[test]

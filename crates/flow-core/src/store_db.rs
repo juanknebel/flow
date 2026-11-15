@@ -107,7 +107,8 @@ fn ensure_schema(conn: &Connection) -> Result<(), StoreError> {
     conn.execute_batch(
         "CREATE TABLE IF NOT EXISTS projects (
             code       TEXT PRIMARY KEY,
-            created_at INTEGER NOT NULL
+            created_at INTEGER NOT NULL,
+            next_card_seq INTEGER NOT NULL DEFAULT 1
         );
         CREATE TABLE IF NOT EXISTS columns (
             project_code TEXT NOT NULL REFERENCES projects(code) ON DELETE CASCADE,
@@ -148,24 +149,41 @@ fn ensure_schema(conn: &Connection) -> Result<(), StoreError> {
 
 /// Adds columns introduced after the initial schema to pre-existing databases.
 fn migrate_schema(conn: &Connection) -> Result<(), StoreError> {
-    let mut stmt = conn.prepare("PRAGMA table_info(cards)")?;
+    migrate_table(
+        conn,
+        "cards",
+        &[
+            ("version", "INTEGER NOT NULL DEFAULT 1"),
+            ("created_at", "INTEGER NOT NULL DEFAULT 0"),
+            ("updated_at", "INTEGER NOT NULL DEFAULT 0"),
+            ("created_by", "TEXT NOT NULL DEFAULT ''"),
+            ("updated_by", "TEXT NOT NULL DEFAULT ''"),
+            ("claimed_by", "TEXT NOT NULL DEFAULT ''"),
+            ("claimed_until", "INTEGER NOT NULL DEFAULT 0"),
+        ],
+    )?;
+    migrate_table(
+        conn,
+        "projects",
+        &[("next_card_seq", "INTEGER NOT NULL DEFAULT 1")],
+    )?;
+    Ok(())
+}
+
+fn migrate_table(
+    conn: &Connection,
+    table: &str,
+    additions: &[(&str, &str)],
+) -> Result<(), StoreError> {
+    let mut stmt = conn.prepare(&format!("PRAGMA table_info({table})"))?;
     let existing: std::collections::HashSet<String> = stmt
         .query_map([], |row| row.get::<_, String>(1))?
         .collect::<Result<_, _>>()?;
     drop(stmt);
 
-    let additions = [
-        ("version", "INTEGER NOT NULL DEFAULT 1"),
-        ("created_at", "INTEGER NOT NULL DEFAULT 0"),
-        ("updated_at", "INTEGER NOT NULL DEFAULT 0"),
-        ("created_by", "TEXT NOT NULL DEFAULT ''"),
-        ("updated_by", "TEXT NOT NULL DEFAULT ''"),
-        ("claimed_by", "TEXT NOT NULL DEFAULT ''"),
-        ("claimed_until", "INTEGER NOT NULL DEFAULT 0"),
-    ];
     for (name, decl) in additions {
-        if !existing.contains(name) {
-            conn.execute(&format!("ALTER TABLE cards ADD COLUMN {name} {decl}"), [])?;
+        if !existing.contains(*name) {
+            conn.execute(&format!("ALTER TABLE {table} ADD COLUMN {name} {decl}"), [])?;
         }
     }
     Ok(())
@@ -520,8 +538,32 @@ pub fn move_card(
     Ok(())
 }
 
+/// Atomically reserves the next card number for a tenant and returns it.
+/// The bump lives in its own short IMMEDIATE transaction so concurrent
+/// creators (CLI, daemon, agents) serialize on the write lock and each gets
+/// a distinct number. Gaps are possible (a later insert may fail) and harmless.
+fn claim_seq(conn: &mut Connection, project: &str) -> Result<i64, StoreError> {
+    let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+    tx.execute(
+        "UPDATE projects SET next_card_seq = next_card_seq + 1 WHERE code = ?1",
+        params![project],
+    )?;
+    let next: i64 = tx.query_row(
+        "SELECT next_card_seq FROM projects WHERE code = ?1",
+        params![project],
+        |row| row.get(0),
+    )?;
+    tx.commit()?;
+    Ok(next - 1)
+}
+
+/// Mints the next sequential card id for a tenant: `<PREFIX>-<n>`, where the
+/// prefix is the uppercased tenant code. Numbers come from a monotonic
+/// per-tenant counter that never goes back, so deleted numbers are never
+/// reused. Cards minted before the counter existed (UUID suffixes) keep
+/// their ids; only new cards use the sequence.
 pub fn create_card(db_path: &Path, project: &str, to_col_id: &str) -> Result<String, StoreError> {
-    let conn = open_db(db_path)?;
+    let mut conn = open_db(db_path)?;
     ensure_tenant(&conn, project)?;
 
     let col_exists: Option<String> = conn
@@ -536,8 +578,8 @@ pub fn create_card(db_path: &Path, project: &str, to_col_id: &str) -> Result<Str
     }
 
     let prefix = project.to_uppercase();
-    for _ in 0..10 {
-        let id = format!("{}-{}", prefix, uuid::Uuid::new_v4());
+    for _ in 0..100 {
+        let id = format!("{prefix}-{}", claim_seq(&mut conn, project)?);
         let now = now_millis() as i64;
         let actor = std::env::var("FLOW_ACTOR").unwrap_or_default();
         let res = conn.execute(
@@ -550,6 +592,8 @@ pub fn create_card(db_path: &Path, project: &str, to_col_id: &str) -> Result<Str
         );
         match res {
             Ok(_) => return Ok(id),
+            // A pre-existing card already owns this number (seeded or
+            // hand-inserted ids); the counter already advanced, so retry.
             Err(rusqlite::Error::SqliteFailure(e, _))
                 if e.code == ErrorCode::ConstraintViolation =>
             {
@@ -786,6 +830,76 @@ mod tests {
             card.depends_on,
             vec!["DEP-1".to_string(), "DEP-2".to_string()]
         );
+
+        cleanup(&db);
+        Ok(())
+    }
+
+    #[test]
+    fn create_card_mints_sequential_ids() -> TestResult {
+        let db = tmp_db();
+        let first = create_card(&db, "acme", "todo").map_err(|e| format!("{e:?}"))?;
+        let second = create_card(&db, "acme", "todo").map_err(|e| format!("{e:?}"))?;
+        let third = create_card(&db, "acme", "todo").map_err(|e| format!("{e:?}"))?;
+        assert_eq!(first, "ACME-1");
+        assert_eq!(second, "ACME-2");
+        assert_eq!(third, "ACME-3");
+
+        cleanup(&db);
+        Ok(())
+    }
+
+    #[test]
+    fn create_card_sequences_are_per_tenant() -> TestResult {
+        let db = tmp_db();
+        assert_eq!(
+            create_card(&db, "acme", "todo").map_err(|e| format!("{e:?}"))?,
+            "ACME-1"
+        );
+        assert_eq!(
+            create_card(&db, "beta", "todo").map_err(|e| format!("{e:?}"))?,
+            "BETA-1"
+        );
+        assert_eq!(
+            create_card(&db, "acme", "todo").map_err(|e| format!("{e:?}"))?,
+            "ACME-2"
+        );
+
+        cleanup(&db);
+        Ok(())
+    }
+
+    #[test]
+    fn create_card_never_reuses_deleted_numbers() -> TestResult {
+        let db = tmp_db();
+        let first = create_card(&db, "acme", "todo").map_err(|e| format!("{e:?}"))?;
+        let second = create_card(&db, "acme", "todo").map_err(|e| format!("{e:?}"))?;
+        assert_eq!(first, "ACME-1");
+        assert_eq!(second, "ACME-2");
+
+        delete_card(&db, "acme", &second).map_err(|e| format!("{e:?}"))?;
+        let third = create_card(&db, "acme", "todo").map_err(|e| format!("{e:?}"))?;
+        assert_eq!(third, "ACME-3");
+
+        cleanup(&db);
+        Ok(())
+    }
+
+    #[test]
+    fn legacy_db_without_counter_migrates_and_mints_sequential() -> TestResult {
+        let db = tmp_db();
+        load_board(&db, "acme").map_err(|e| format!("{e:?}"))?;
+        {
+            // Simulate a pre-migration database: projects without next_card_seq.
+            let conn = Connection::open(&db).map_err(|e| format!("{e:?}"))?;
+            conn.execute_batch("ALTER TABLE projects DROP COLUMN next_card_seq")
+                .map_err(|e| format!("{e:?}"))?;
+        }
+
+        let id = create_card(&db, "acme", "todo").map_err(|e| format!("{e:?}"))?;
+        assert_eq!(id, "ACME-1");
+        let board = load_board(&db, "acme").map_err(|e| format!("{e:?}"))?;
+        assert!(board.find_card(&id).is_some());
 
         cleanup(&db);
         Ok(())

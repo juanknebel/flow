@@ -746,7 +746,7 @@ pub fn draw_col(f: &mut Frame, app: &App, idx: usize, rect: Rect) {
             } else {
                 Style::default()
             };
-            let proj_style = if dimmed {
+            let id_style = if dimmed {
                 Style::default().fg(Color::DarkGray)
             } else {
                 Style::default().fg(Color::Magenta)
@@ -760,8 +760,8 @@ pub fn draw_col(f: &mut Frame, app: &App, idx: usize, rect: Rect) {
                 format!("[{}] ", c.priority.short_label()),
                 prio_style,
             )];
-            if !c.project.is_empty() {
-                spans.push(Span::styled(format!("{} ", c.project), proj_style));
+            if !c.id.is_empty() {
+                spans.push(Span::styled(format!("{} ", c.id), id_style));
             }
             spans.push(Span::styled(c.title.clone(), title_style));
             let state = app.board.state_of(c);
@@ -939,4 +939,71 @@ fn calculate_visual_cursor_pos(text: &str, cursor_pos: usize, width: usize) -> (
     }
 
     (0, y)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use flow_core::model::{Board, Card, Column, Priority};
+    use ratatui::{Terminal, backend::TestBackend};
+
+    fn card(id: &str, project: &str, title: &str) -> Card {
+        Card {
+            id: id.into(),
+            title: title.into(),
+            description: String::new(),
+            priority: Priority::Medium,
+            assignee: String::new(),
+            project: project.into(),
+            depends_on: Vec::new(),
+            version: 1,
+            created_at: 0,
+            updated_at: 0,
+            created_by: String::new(),
+            updated_by: String::new(),
+            claimed_by: String::new(),
+            claimed_until: 0,
+        }
+    }
+
+    fn rendered_col_text(app: &App) -> String {
+        let backend = TestBackend::new(100, 10);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal.draw(|f| draw_col(f, app, 0, f.area())).unwrap();
+        let buffer = terminal.backend().buffer().clone();
+        let area = buffer.area;
+        let mut text = String::new();
+        for y in area.y..area.y + area.height {
+            for x in area.x..area.x + area.width {
+                text.push_str(buffer.cell((x, y)).unwrap().symbol());
+            }
+            text.push('\n');
+        }
+        text
+    }
+
+    #[test]
+    fn card_row_shows_id_instead_of_project() {
+        let board = Board {
+            columns: vec![Column {
+                id: "todo".into(),
+                title: "TO DO".into(),
+                cards: vec![card("ACME-42", "acme", "Fix login")],
+            }],
+        };
+        let app = App::new(board);
+        let text = rendered_col_text(&app);
+        assert!(
+            text.contains("ACME-42"),
+            "row must show the card id:\n{text}"
+        );
+        assert!(
+            !text.contains("acme"),
+            "row must not show the project label:\n{text}"
+        );
+        assert!(
+            text.contains("Fix login"),
+            "row must keep the title:\n{text}"
+        );
+    }
 }

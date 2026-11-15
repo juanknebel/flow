@@ -117,7 +117,8 @@ impl Provider for LocalProvider {
         if is_all(&self.project) {
             return Err(read_only());
         }
-        store_db::move_card(&self.db_path, &self.project, card_id, to_col_id)
+        let card_id = self.resolve_card_id(card_id)?;
+        store_db::move_card(&self.db_path, &self.project, &card_id, to_col_id)
             .map_err(|e| map_err("move_card", &self.db_path, e))
     }
 
@@ -183,11 +184,12 @@ impl Provider for LocalProvider {
         if is_all(&self.project) {
             return Err(read_only());
         }
+        let card_id = self.resolve_card_id(card_id)?;
         // A card can't be deleted while other cards still depend on it —
         // that would leave a dangling reference.
         let board = store_db::load_board_all(&self.db_path)
             .map_err(|e| map_err("load_board", &self.db_path, e))?;
-        let dependents = board.dependents_of(card_id);
+        let dependents = board.dependents_of(&card_id);
         if !dependents.is_empty() {
             let ids: Vec<&str> = dependents.iter().map(|c| c.id.as_str()).collect();
             return Err(ProviderError::Validation {
@@ -198,7 +200,7 @@ impl Provider for LocalProvider {
             });
         }
 
-        store_db::delete_card(&self.db_path, &self.project, card_id)
+        store_db::delete_card(&self.db_path, &self.project, &card_id)
             .map_err(|e| map_err("delete_card", &self.db_path, e))
     }
 
@@ -216,11 +218,14 @@ impl Provider for LocalProvider {
         if is_all(&self.project) {
             return Err(read_only());
         }
-        let deps = self.validate_depends_on(card_id, depends_on)?;
+        // Canonicalize before validating: self- and cycle checks compare
+        // against stored ids, so a lowercase-typed id must be resolved first.
+        let card_id = self.resolve_card_id(card_id)?;
+        let deps = self.validate_depends_on(&card_id, depends_on)?;
         store_db::update_card(
             &self.db_path,
             &self.project,
-            card_id,
+            &card_id,
             title,
             description,
             priority,
@@ -240,7 +245,8 @@ impl Provider for LocalProvider {
         if is_all(&self.project) {
             return Err(read_only());
         }
-        store_db::claim_card(&self.db_path, &self.project, card_id, agent, lease_ms)
+        let card_id = self.resolve_card_id(card_id)?;
+        store_db::claim_card(&self.db_path, &self.project, &card_id, agent, lease_ms)
             .map_err(|e| map_err("claim_card", &self.db_path, e))
     }
 
@@ -248,15 +254,35 @@ impl Provider for LocalProvider {
         if is_all(&self.project) {
             return Err(read_only());
         }
-        store_db::release_card(&self.db_path, &self.project, card_id, agent)
+        let card_id = self.resolve_card_id(card_id)?;
+        store_db::release_card(&self.db_path, &self.project, &card_id, agent)
             .map_err(|e| map_err("release_card", &self.db_path, e))
     }
 }
 
 impl LocalProvider {
-    /// Validates a proposed dependency list and returns the normalized
-    /// (de-duplicated, trimmed, empty-entries-dropped) list to persist:
-    /// - every referenced card must exist,
+    /// Resolves a user-typed card id to the canonical stored id within the
+    /// active tenant (matched case-insensitively). Users may type `acme-1`;
+    /// operations run against `ACME-1`. Card operations are tenant-scoped,
+    /// so unlike dependency validation this never looks at other tenants.
+    /// Missing cards fail with `NotFound` carrying the typed id.
+    fn resolve_card_id(&self, card_id: &str) -> Result<String, ProviderError> {
+        let board = store_db::load_board(&self.db_path, &self.project)
+            .map_err(|e| map_err("load_board", &self.db_path, e))?;
+        board
+            .find_card_case_insensitive(card_id)
+            .map(|c| c.id.clone())
+            .ok_or_else(|| ProviderError::NotFound {
+                id: card_id.to_string(),
+            })
+    }
+
+    /// Validates a proposed dependency list and returns the normalized list
+    /// to persist: trimmed, empty-entries-dropped, resolved to the canonical
+    /// stored id of each referenced card, and de-duplicated. Users may type
+    /// ids in any case (`acme-1`); what gets stored is the canonical id
+    /// (`ACME-1`). Rules:
+    /// - every referenced card must exist (matched case-insensitively),
     /// - a card can't depend on itself,
     /// - the resulting dependency graph must stay acyclic.
     fn validate_depends_on(
@@ -264,30 +290,36 @@ impl LocalProvider {
         card_id: &str,
         depends_on: &[String],
     ) -> Result<Vec<String>, ProviderError> {
-        let mut seen = std::collections::HashSet::new();
-        let mut deps = Vec::new();
+        let mut trimmed = Vec::new();
         for id in depends_on {
             let id = id.trim();
-            if id.is_empty() || !seen.insert(id.to_string()) {
-                continue;
+            if !id.is_empty() {
+                trimmed.push(id);
             }
-            deps.push(id.to_string());
         }
 
-        if deps.is_empty() {
-            return Ok(deps);
+        if trimmed.is_empty() {
+            return Ok(Vec::new());
         }
 
         let board = store_db::load_board_all(&self.db_path)
             .map_err(|e| map_err("load_board", &self.db_path, e))?;
-        for dep in &deps {
-            if dep == card_id {
+        let mut seen = std::collections::HashSet::new();
+        let mut deps = Vec::new();
+        for dep in trimmed {
+            let canonical = board
+                .find_card_case_insensitive(dep)
+                .map(|c| c.id.clone())
+                .ok_or_else(|| ProviderError::NotFound {
+                    id: dep.to_string(),
+                })?;
+            if canonical.to_lowercase() == card_id.to_lowercase() {
                 return Err(ProviderError::Validation {
                     msg: "a card cannot depend on itself".to_string(),
                 });
             }
-            if board.find_card(dep).is_none() {
-                return Err(ProviderError::NotFound { id: dep.clone() });
+            if seen.insert(canonical.clone()) {
+                deps.push(canonical);
             }
         }
 
@@ -545,6 +577,361 @@ mod tests {
             }
             other => panic!("expected Validation error, got {other:?}"),
         }
+
+        cleanup(&db);
+        Ok(())
+    }
+
+    #[test]
+    fn update_card_accepts_mixed_case_dep_list_and_stores_canonical() -> TestResult {
+        let db = tmp_db();
+        let mut provider = LocalProvider::new(db.clone(), "acme".to_string());
+        let a = provider
+            .create_card("todo", "acme")
+            .map_err(|e| e.to_string())?;
+        let b = provider
+            .create_card("todo", "acme")
+            .map_err(|e| e.to_string())?;
+        let c = provider
+            .create_card("todo", "acme")
+            .map_err(|e| e.to_string())?;
+        assert_eq!(
+            (a.as_str(), b.as_str(), c.as_str()),
+            ("ACME-1", "ACME-2", "ACME-3")
+        );
+
+        provider
+            .update_card(
+                &c,
+                "C",
+                "",
+                Priority::Medium,
+                "",
+                "acme",
+                &["acme-1".to_string(), "Acme-2".to_string()],
+                None,
+            )
+            .map_err(|e| e.to_string())?;
+
+        let board = provider.load_board().map_err(|e| e.to_string())?;
+        assert_eq!(
+            board.find_card(&c).unwrap().depends_on,
+            vec!["ACME-1".to_string(), "ACME-2".to_string()]
+        );
+
+        cleanup(&db);
+        Ok(())
+    }
+
+    #[test]
+    fn update_card_dedupes_dependencies_across_cases() -> TestResult {
+        let db = tmp_db();
+        let mut provider = LocalProvider::new(db.clone(), "acme".to_string());
+        let _a = provider
+            .create_card("todo", "acme")
+            .map_err(|e| e.to_string())?;
+        let b = provider
+            .create_card("todo", "acme")
+            .map_err(|e| e.to_string())?;
+
+        provider
+            .update_card(
+                &b,
+                "B",
+                "",
+                Priority::Medium,
+                "",
+                "acme",
+                &[
+                    "acme-1".to_string(),
+                    "ACME-1".to_string(),
+                    " ACME-1 ".to_string(),
+                    String::new(),
+                ],
+                None,
+            )
+            .map_err(|e| e.to_string())?;
+
+        let board = provider.load_board().map_err(|e| e.to_string())?;
+        assert_eq!(
+            board.find_card(&b).unwrap().depends_on,
+            vec!["ACME-1".to_string()]
+        );
+
+        cleanup(&db);
+        Ok(())
+    }
+
+    #[test]
+    fn update_card_rejects_self_dependency_in_any_case() -> TestResult {
+        let db = tmp_db();
+        let mut provider = LocalProvider::new(db.clone(), "acme".to_string());
+        let id = provider
+            .create_card("todo", "acme")
+            .map_err(|e| e.to_string())?;
+
+        let err = provider
+            .update_card(
+                &id,
+                "Title",
+                "",
+                Priority::Medium,
+                "",
+                "acme",
+                &[id.to_lowercase()],
+                None,
+            )
+            .unwrap_err();
+
+        assert!(matches!(err, ProviderError::Validation { .. }));
+
+        cleanup(&db);
+        Ok(())
+    }
+
+    #[test]
+    fn update_card_detects_cycle_through_lowercase_dependency() -> TestResult {
+        let db = tmp_db();
+        let mut provider = LocalProvider::new(db.clone(), "acme".to_string());
+        let a = provider
+            .create_card("todo", "acme")
+            .map_err(|e| e.to_string())?;
+        let b = provider
+            .create_card("todo", "acme")
+            .map_err(|e| e.to_string())?;
+        provider
+            .update_card(
+                &b,
+                "B",
+                "",
+                Priority::Medium,
+                "",
+                "acme",
+                std::slice::from_ref(&a),
+                None,
+            )
+            .map_err(|e| e.to_string())?;
+
+        let err = provider
+            .update_card(
+                &a,
+                "A",
+                "",
+                Priority::Medium,
+                "",
+                "acme",
+                &[b.to_lowercase()],
+                None,
+            )
+            .unwrap_err();
+
+        match err {
+            ProviderError::Validation { msg } => {
+                assert!(msg.contains("circular dependency"), "{msg}")
+            }
+            other => panic!("expected Validation error, got {other:?}"),
+        }
+
+        cleanup(&db);
+        Ok(())
+    }
+
+    #[test]
+    fn update_card_missing_dependency_reports_typed_id() -> TestResult {
+        let db = tmp_db();
+        let mut provider = LocalProvider::new(db.clone(), "acme".to_string());
+        let id = provider
+            .create_card("todo", "acme")
+            .map_err(|e| e.to_string())?;
+
+        let err = provider
+            .update_card(
+                &id,
+                "Title",
+                "",
+                Priority::Medium,
+                "",
+                "acme",
+                &["nope-1".to_string()],
+                None,
+            )
+            .unwrap_err();
+
+        match err {
+            ProviderError::NotFound { id } => assert_eq!(id, "nope-1"),
+            other => panic!("expected NotFound error, got {other:?}"),
+        }
+
+        cleanup(&db);
+        Ok(())
+    }
+
+    #[test]
+    fn move_card_resolves_lowercase_id() -> TestResult {
+        let db = tmp_db();
+        let mut provider = LocalProvider::new(db.clone(), "acme".to_string());
+        let id = provider
+            .create_card("todo", "acme")
+            .map_err(|e| e.to_string())?;
+        assert_eq!(id, "ACME-1");
+
+        provider
+            .move_card("acme-1", "done")
+            .map_err(|e| e.to_string())?;
+
+        let board = provider.load_board().map_err(|e| e.to_string())?;
+        assert!(board.columns[0].cards.is_empty());
+        assert_eq!(board.columns[3].cards[0].id, "ACME-1");
+
+        cleanup(&db);
+        Ok(())
+    }
+
+    #[test]
+    fn move_card_missing_id_reports_typed_id() -> TestResult {
+        let db = tmp_db();
+        let mut provider = LocalProvider::new(db.clone(), "acme".to_string());
+
+        let err = provider.move_card("nope-1", "done").unwrap_err();
+        match err {
+            ProviderError::NotFound { id } => assert_eq!(id, "nope-1"),
+            other => panic!("expected NotFound error, got {other:?}"),
+        }
+
+        cleanup(&db);
+        Ok(())
+    }
+
+    #[test]
+    fn update_card_resolves_lowercase_card_id() -> TestResult {
+        let db = tmp_db();
+        let mut provider = LocalProvider::new(db.clone(), "acme".to_string());
+        let id = provider
+            .create_card("todo", "acme")
+            .map_err(|e| e.to_string())?;
+
+        provider
+            .update_card(
+                "acme-1",
+                "Retitled",
+                "",
+                Priority::Medium,
+                "",
+                "acme",
+                &[],
+                None,
+            )
+            .map_err(|e| e.to_string())?;
+
+        let board = provider.load_board().map_err(|e| e.to_string())?;
+        let card = board.find_card(&id).expect("card still present");
+        assert_eq!(card.title, "Retitled");
+        assert_eq!(card.id, "ACME-1");
+
+        cleanup(&db);
+        Ok(())
+    }
+
+    #[test]
+    fn update_card_detects_cycle_through_lowercase_card_id() -> TestResult {
+        let db = tmp_db();
+        let mut provider = LocalProvider::new(db.clone(), "acme".to_string());
+        let a = provider
+            .create_card("todo", "acme")
+            .map_err(|e| e.to_string())?;
+        let b = provider
+            .create_card("todo", "acme")
+            .map_err(|e| e.to_string())?;
+        provider
+            .update_card(
+                &b,
+                "B",
+                "",
+                Priority::Medium,
+                "",
+                "acme",
+                std::slice::from_ref(&a),
+                None,
+            )
+            .map_err(|e| e.to_string())?;
+
+        let err = provider
+            .update_card(
+                "acme-1",
+                "A",
+                "",
+                Priority::Medium,
+                "",
+                "acme",
+                std::slice::from_ref(&b),
+                None,
+            )
+            .unwrap_err();
+
+        match err {
+            ProviderError::Validation { msg } => {
+                assert!(msg.contains("circular dependency"), "{msg}")
+            }
+            other => panic!("expected Validation error, got {other:?}"),
+        }
+
+        cleanup(&db);
+        Ok(())
+    }
+
+    #[test]
+    fn delete_card_resolves_lowercase_id() -> TestResult {
+        let db = tmp_db();
+        let mut provider = LocalProvider::new(db.clone(), "acme".to_string());
+        let a = provider
+            .create_card("todo", "acme")
+            .map_err(|e| e.to_string())?;
+        let b = provider
+            .create_card("todo", "acme")
+            .map_err(|e| e.to_string())?;
+        provider
+            .update_card(
+                &b,
+                "B",
+                "",
+                Priority::Medium,
+                "",
+                "acme",
+                std::slice::from_ref(&a),
+                None,
+            )
+            .map_err(|e| e.to_string())?;
+
+        provider.delete_card("acme-2").map_err(|e| e.to_string())?;
+        provider.delete_card("acme-1").map_err(|e| e.to_string())?;
+
+        let board = provider.load_board().map_err(|e| e.to_string())?;
+        assert!(board.find_card(&a).is_none());
+        assert!(board.find_card(&b).is_none());
+
+        cleanup(&db);
+        Ok(())
+    }
+
+    #[test]
+    fn claim_and_release_resolve_lowercase_id() -> TestResult {
+        let db = tmp_db();
+        let mut provider = LocalProvider::new(db.clone(), "acme".to_string());
+        let id = provider
+            .create_card("todo", "acme")
+            .map_err(|e| e.to_string())?;
+
+        provider
+            .claim_card("acme-1", "bot", 300000)
+            .map_err(|e| e.to_string())?;
+        let board = provider.load_board().map_err(|e| e.to_string())?;
+        assert_eq!(board.find_card(&id).unwrap().claimed_by, "bot");
+
+        provider
+            .release_card("acme-1", "bot")
+            .map_err(|e| e.to_string())?;
+        let board = provider.load_board().map_err(|e| e.to_string())?;
+        assert!(board.find_card(&id).unwrap().claimed_by.is_empty());
 
         cleanup(&db);
         Ok(())
