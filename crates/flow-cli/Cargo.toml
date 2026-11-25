@@ -3,6 +3,7 @@ name = "flow-cli"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+repository.workspace = true
 description = "CLI interface for flow Kanban board."
 
 [[bin]]
