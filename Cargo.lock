@@ -597,7 +597,6 @@ dependencies = [
  "rusqlite",
  "serde",
  "serde_json",
- "uuid",
 ]
 
 [[package]]
